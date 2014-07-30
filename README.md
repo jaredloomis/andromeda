@@ -26,14 +26,6 @@ data Object = Object {
     objectVertices :: [Vec3 GL.GLfloat]
     }
 
-exampleObject = Object vertexPosition
-
-vertexPosition :: [Vec3 GL.GLfloat]
-vertexPosition =
-    [(-1) :. (-1) :. 0 :. (),
-        1 :. (-1) :. 0 :. (),
-        0 :.  1   :. 0 :. ()]
-
 main :: IO ()
 main = print $ generateGLSL vertexShader
 
@@ -103,6 +95,16 @@ shaderProgram =
 Shader programs can be run very simply:
 
 ```Haskell
+exampleObject = Object vertexPosition
+
+vertexPosition :: [Vec3 GL.GLfloat]
+vertexPosition =
+    [(-1) :. (-1) :. 0 :. (),
+        1 :. (-1) :. 0 :. (),
+        0 :.  1   :. 0 :. ()]
+
+
+
 main :: IO ()
 main = do
     -- Open a window and initialize OpenGL.
