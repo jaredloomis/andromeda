@@ -13,28 +13,38 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Language.GLSL.Monad.Primitive where
 
-import Control.Monad (unless)
+import Control.Monad (unless, when)
 import Control.Applicative ((<$>))
 import Data.Monoid ((<>), mempty)
 
-import Foreign.Ptr (nullPtr)
+import Foreign (Word8)
+import Unsafe.Coerce (unsafeCoerce)
+import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.Marshal.Array (withArray, withArrayLen)
 import Foreign.Storable (Storable, sizeOf)
 
 import Data.Vec
-    ((:.)(..), Vec3, Mat44, matToLists, perspective,
+    ((:.)(..), Vec3, Vec2, Mat44, matToLists, perspective,
      multmm, translation, matToList,
-     rotationLookAt, rotationY)
+     rotationEuler)
+import qualified Data.Vec as V (map)
+
+import Data.Time.Clock (utctDayTime, getCurrentTime)
 
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
+
+
+import qualified Codec.Picture as Juicy
+import qualified Codec.Picture.Types as JTypes
+import qualified Data.Vector.Storable as V (unsafeWith)
 
 import Graphics.Rendering.OpenGL (($=))
 import qualified Graphics.Rendering.OpenGL as GL
 import Graphics.Rendering.OpenGL.Raw (glUniformMatrix4fv)
 import qualified Graphics.UI.GLFW as GLFW
 
-import Language.GLSL.Monad.GLSL hiding (($=), Proxy, simpleProgram)
+import Language.GLSL.Monad.GLSL hiding (($=), simpleProgram)
 
 ---------------------
 -- Default actions --
@@ -47,11 +57,12 @@ openWindow = do
     -- Give GLFW some hints.
     mapM_ GLFW.windowHint
         [GLFW.WindowHint'OpenGLProfile GLFW.OpenGLProfile'Core,
+         GLFW.WindowHint'DepthBits 16,
          GLFW.WindowHint'Samples 4,
          GLFW.WindowHint'Resizable True,
          GLFW.WindowHint'ClientAPI GLFW.ClientAPI'OpenGL,
          GLFW.WindowHint'ContextVersionMajor 4,
-         GLFW.WindowHint'ContextVersionMinor 4]
+         GLFW.WindowHint'ContextVersionMinor 3]
 
     -- Open window.
     Just win <- GLFW.createWindow
@@ -83,21 +94,32 @@ initGL win = do
     GL.cullFace $= Just GL.Back
 
     -- Call resize function.
-    (w,h) <- GLFW.getFramebufferSize win
-    print (w,h)
+    (w, h) <- GLFW.getFramebufferSize win
     resizeScene win w h 
 
 resizeScene :: GLFW.WindowSizeCallback
 -- Prevent divide by 0
 resizeScene win w 0 = resizeScene win w 1
-resizeScene _ width height =
+resizeScene _ width _ = do
+    let height' = heightFromWidth width
+
     -- Make viewport the same size as the window.
     GL.viewport $= (GL.Position 0 0,
-                    GL.Size (fromIntegral width) $ fromIntegral height)
+                    GL.Size (fromIntegral width) $ height')
+
+getViewportSize :: GLFW.Window -> IO (GL.GLsizei, GL.GLsizei)
+getViewportSize win = do
+    (width, _) <- GLFW.getFramebufferSize win
+    return (fromIntegral width, heightFromWidth width)
+
+heightFromWidth :: Int -> GL.GLsizei
+heightFromWidth width =
+    floor $ fromIntegral width / (8 / 6 :: GL.GLfloat)
 
 cleanup :: ShaderProgram t -> IO ()
-cleanup (ShaderProgram program _ _ _) = do
+cleanup (ShaderProgram program _ attrs _) = do
     GL.deleteObjectName program
+    mapM_ (\(AttribGPU buffer _ _ _ _) -> GL.deleteObjectName buffer) attrs
 
 ------------------
 -- Buffer utils --
@@ -123,17 +145,107 @@ replaceBuffer target elems len =
         let dataSize = fromIntegral $ len * sizeOf (error "replaceBuffer" :: a)
         GL.bufferData target $= (dataSize, ptr, GL.StaticDraw)
 
+
+--------------------
+-- ShaderGalaxies --
+--------------------
+
+data ShaderUniverse t =
+    ShaderUniverse [ShaderGalaxy t] [ShaderProgram FBO]
+
+allGalaxies :: ShaderUniverse t -> [ShaderGalaxy t]
+allGalaxies (ShaderUniverse xs _) = xs
+
+allPostPrograms :: ShaderUniverse t -> [ShaderProgram FBO]
+allPostPrograms (ShaderUniverse _ xs) = xs
+
+hasPostShaders :: ShaderUniverse t -> Bool
+hasPostShaders (ShaderUniverse _ []) = False
+hasPostShaders _ = True
+
+data ShaderGalaxy t =
+    PureGalaxy (ShaderProgram t) (t -> t) t
+  | MonadicGalaxy (ShaderProgram t) (t -> IO t) t
+
+(-|>) :: [ShaderGalaxy t] -> [ShaderProgram FBO] -> ShaderUniverse t
+(-|>) = ShaderUniverse
+
+mainLoop ::
+    GLFW.Window ->
+    ShaderUniverse t ->
+    IO ()
+mainLoop win univ = do
+    if not . hasPostShaders $ univ
+        then loop univ
+    else do
+        size <- getViewportSize win
+        fbo <- makeFramebuffer size
+        loopPP fbo univ
+    mapM_ cleanupGalaxy $ allGalaxies univ
+    GLFW.destroyWindow win
+    GLFW.terminate
+  where
+    loop (ShaderUniverse galaxies posts) = do
+        GL.clear [GL.ColorBuffer, GL.DepthBuffer]
+        galaxies' <- mapM drawGalaxy galaxies
+        endFrame
+        shouldClose <- GLFW.windowShouldClose win
+        unless shouldClose $
+            loop $ ShaderUniverse galaxies' posts
+
+    drawGalaxy (PureGalaxy prog updateFunc global) = do
+        drawProgram prog global
+        return . PureGalaxy prog updateFunc $ updateFunc global
+    drawGalaxy (MonadicGalaxy prog updateFunc global) = do
+        drawProgram prog global
+        MonadicGalaxy prog updateFunc <$> updateFunc global
+
+    loopPP fbo@(FBO fbuf size _) (ShaderUniverse galaxies posts) = do
+        GL.bindFramebuffer GL.Framebuffer $= fbuf
+        GL.viewport $= (GL.Position 0 0, size)
+        GL.clear [GL.ColorBuffer, GL.DepthBuffer]
+
+        galaxies' <- mapM drawGalaxy galaxies
+
+        GL.bindFramebuffer GL.Framebuffer $= GL.defaultFramebufferObject
+        GL.clear [GL.ColorBuffer, GL.DepthBuffer]
+        drawPosts fbo posts fbo
+
+        endFrame
+        shouldClose <- GLFW.windowShouldClose win
+        unless shouldClose $
+            loopPP fbo $ ShaderUniverse galaxies' posts
+
+    endFrame = do
+        GLFW.swapBuffers win
+        GLFW.pollEvents
+
+    cleanupGalaxy (PureGalaxy prog _ _) = cleanup prog
+    cleanupGalaxy (MonadicGalaxy prog _ _) = cleanup prog
+
 ------------------------------------------
 -- Different representations of Shaders --
 ------------------------------------------
 
 data Shader (p :: GL.ShaderType) t =
-    Shader (ShaderTypeProxy p) (GLSL t ())
+    Shader (ShaderTypeProxy p) (ShaderM p t ())
+  | FromBS (ShaderTypeProxy p) (GLSLInfo t) B.ByteString
+  | FromFile (ShaderTypeProxy p) (GLSLInfo t) FilePath
 
 type ShaderSequence t = [WrappedShader t]
 data WrappedShader t =
     forall p. (ShaderTypeVal (ShaderTypeProxy p)) =>
         Wrapped (Shader p t)
+
+(-&>) :: ShaderTypeVal (ShaderTypeProxy p) =>
+    Shader p t -> ShaderSequence t -> ShaderSequence t
+(-&>) shader1 wrappedOnes =
+    Wrapped shader1 : wrappedOnes
+infixr 5 -&>
+
+lastly :: ShaderTypeVal (ShaderTypeProxy p) =>
+    Shader p t -> [WrappedShader t]
+lastly = return . Wrapped
 
 data ShaderProgram t =
     ShaderProgram
@@ -142,7 +254,7 @@ data ShaderProgram t =
         [AttribGPU t]
         [UniformGPU t]
 
-data ShaderTypeProxy (t :: GL.ShaderType) = STProxy
+data ShaderTypeProxy (t :: GL.ShaderType) = Proxy
 
 class ShaderTypeVal a where
     typeVal :: a -> GL.ShaderType
@@ -191,7 +303,7 @@ data UniformGPU t = UniformGPU GL.UniformLocation (t -> IO ())
 
 drawProgram :: ShaderProgram t -> t -> IO ()
 drawProgram (ShaderProgram prog _ attribs unis) global = do
-    GL.clear [GL.ColorBuffer, GL.DepthBuffer]
+    -- Use shader program.
     GL.currentProgram $= Just prog
 
     -- Bind all vars.
@@ -230,8 +342,8 @@ compileAndLink :: ShaderSequence t -> IO GL.Program
 compileAndLink shaderSeq = do
     shaders <- compileAll shaderSeq
     program <- GL.createProgram
-    mapM_ (GL.attachShader program) shaders
-    -- mapM_ (\s -> GL.attachShader program s >> GL.deleteObjectName s) shaders
+    --mapM_ (GL.attachShader program) shaders
+    mapM_ (\s -> GL.attachShader program s >> GL.deleteObjectName s) shaders
     GL.linkProgram program
     return program
 
@@ -248,6 +360,13 @@ compile (Shader proxy glsl) =
     let code = generateGLSL glsl
         shaderType = typeVal proxy
     in compileShader shaderType code
+compile (FromBS proxy _ code) =
+    let shaderType = typeVal proxy
+    in compileShader shaderType code
+compile (FromFile proxy _ file) =
+    let shaderType = typeVal proxy
+    in compileShader shaderType =<<
+        B.readFile file
 
 compileShader :: GL.ShaderType -> B.ByteString -> IO GL.Shader
 compileShader shaderType src = do
@@ -265,13 +384,25 @@ compileShader shaderType src = do
 
 gatherInfo :: ShaderSequence t -> GLSLInfo t
 gatherInfo (Wrapped (Shader proxy glsl) : shaders) =
-    let GLSLInfo ins uniforms outs = evalGLSL glsl
+    let GLSLInfo ins uniforms outs = evalShaderM glsl
         ins' = case typeVal proxy of
             GL.VertexShader -> ins
             _               -> []
         outs' = case typeVal proxy of
             GL.FragmentShader -> outs
             _                 -> []
+    in GLSLInfo ins' uniforms outs' <> gatherInfo shaders
+gatherInfo (Wrapped (FromBS proxy info _) : shaders) =
+    let GLSLInfo ins uniforms outs = info
+        (ins', outs') = case typeVal proxy of
+            GL.VertexShader -> (ins, outs)
+            _               -> ([], [])
+    in GLSLInfo ins' uniforms outs' <> gatherInfo shaders
+gatherInfo (Wrapped (FromFile proxy info _) : shaders) =
+    let GLSLInfo ins uniforms outs = info
+        (ins', outs') = case typeVal proxy of
+            GL.VertexShader -> (ins, outs)
+            _               -> ([], [])
     in GLSLInfo ins' uniforms outs' <> gatherInfo shaders
 gatherInfo [] = mempty
 
@@ -306,12 +437,10 @@ inMkBuffer (InInt valFunc _) global = makeBuffer GL.ArrayBuffer $ valFunc global
 inMkBuffer (InVec2 valFunc _) global = makeBuffer GL.ArrayBuffer $ valFunc global
 inMkBuffer (InVec3 valFunc _) global = makeBuffer GL.ArrayBuffer $ valFunc global
 inMkBuffer (InVec4 valFunc _) global = makeBuffer GL.ArrayBuffer $ valFunc global
-inMkBuffer (InMat4 _ _) _ =
+inMkBuffer InMat4{} _ =
     error "Primitive.inMkBuffer Given Mat4. Idk what to do."
-    --map VAOIndex . valFunc
-inMkBuffer (InBool _ _) _ =
-    error "Primitive.inMkBuffer Given Bool. Idk what to do."
-    --map VAOIndex . valFunc
+inMkBuffer InNone{} _ =
+    error "Primitive.inMkBuffer Given InNone. Idk what to do."
 
 inReplaceBuffer :: In t -> t -> Int -> IO ()
 inReplaceBuffer (InFloat valFunc _) global lenVals =
@@ -324,10 +453,10 @@ inReplaceBuffer (InVec3 valFunc _) global lenVals =
     replaceBuffer GL.ArrayBuffer (valFunc global) lenVals
 inReplaceBuffer (InVec4 valFunc _) global lenVals =
     replaceBuffer GL.ArrayBuffer (valFunc global) lenVals
-inReplaceBuffer (InMat4 _ _) _ _ =
+inReplaceBuffer InMat4{} _ _ =
     error "Primitive.inReplaceBuffer: InMat4"
-inReplaceBuffer (InBool _ _) _ _ =
-    error "Primitive.inReplaceBuffer: InBool"
+inReplaceBuffer InNone{} _ _ =
+    error "Primitive.inReplaceBuffer: InNone"
 
 inLength :: In t -> t -> Int
 inLength (InFloat valFunc _) = length . valFunc
@@ -335,26 +464,26 @@ inLength (InInt valFunc _) = length . valFunc
 inLength (InVec2 valFunc _) = length . valFunc
 inLength (InVec3 valFunc _) = length . valFunc
 inLength (InVec4 valFunc _) = length . valFunc
-inLength (InBool valFunc _) = length . valFunc
 inLength (InMat4 valFunc _) = length . valFunc
+inLength InNone{} = error "Primitive.inLength: Given InNone."
 
 inDescriptor :: In t -> (GL.GLint, GL.DataType)
 inDescriptor InFloat{} = (1, GL.Float)
 inDescriptor InInt{} = (1, GL.Int)
-inDescriptor InBool{} = (1, GL.Int)
 inDescriptor InVec2{} = (2, GL.Float)
 inDescriptor InVec3{} = (3, GL.Float)
 inDescriptor InVec4{} = (4, GL.Float)
 inDescriptor InMat4{} = (16, GL.Float)
+inDescriptor InNone{} = error "Primitive.inDescriptor: Given InNone."
 
 inName :: In t -> B.ByteString
 inName (InFloat _ name) = name
 inName (InInt _ name) = name
-inName (InBool _ name) = name
 inName (InVec2 _ name) = name
 inName (InVec3 _ name) = name
 inName (InVec4 _ name) = name
 inName (InMat4 _ name) = name
+inName (InNone name) = name
 
 bindAttrib :: t -> AttribGPU t -> IO ()
 bindAttrib global (AttribGPU buffer updateFunc location descriptor _) = do
@@ -383,8 +512,6 @@ uniBind (UniformFloat valueFunc _) location global =
 uniBind (UniformInt valueFunc _) location global =
     GL.uniform location $=
         GL.Index1 (fromIntegral $ valueFunc global :: GL.GLint)
-uniBind (UniformBool valueFunc _) location global =
-    GL.uniform location $= GL.Index1 (boolToGLuint $ valueFunc global)
 uniBind (UniformVec2 valueFunc _) location global =
     let x :. y :. () = valueFunc global
     in GL.uniform location $= GL.Vertex2 x y
@@ -397,9 +524,12 @@ uniBind (UniformVec4 valueFunc _) location global =
 uniBind (UniformMat4 valueFunc _) (GL.UniformLocation location) global =
     withArray (matToList $ valueFunc global) $ \ptr ->
         glUniformMatrix4fv location 1 1 ptr
-    --withArray (matToGLFormat $ valueFunc global) $ \ptr ->
-    --    glUniformMatrix4fv location 1 0 ptr
-        --GL.uniformv location 16 ptr
+uniBind (UniformSampler2D valueFunc _) location global = do
+    let Sampler2DInfo textureObject textureUnit = valueFunc global
+        GL.TextureUnit textureId = textureUnit
+    GL.activeTexture $= textureUnit
+    GL.textureBinding GL.Texture2D $= Just textureObject
+    GL.uniform location $= GL.Index1 (fromIntegral textureId :: GL.GLint)
 
 -- | Translate from Vec's format (row-major) to
 --   OpenGL format (column-major).
@@ -418,11 +548,177 @@ boolToGLuint False = 0
 uniName :: Uniform t -> B.ByteString 
 uniName (UniformFloat _ name) = name
 uniName (UniformInt _ name) = name
-uniName (UniformBool _ name) = name
 uniName (UniformVec2 _ name) = name
 uniName (UniformVec3 _ name) = name
 uniName (UniformVec4 _ name) = name
 uniName (UniformMat4 _ name) = name
+uniName (UniformSampler2D _ name) = name
 
 bindUniform :: t -> UniformGPU t -> IO ()
 bindUniform global (UniformGPU _ bindFunc) = bindFunc global
+
+
+-- | Load an image and turn it into something OpenGL can use.
+juicyLoadTexture :: FilePath -> IO GL.TextureObject
+juicyLoadTexture file = do
+    (w, h, ptr) <- juicyLoadImageRaw file
+
+    texObject <- GL.genObjectName
+    GL.textureBinding GL.Texture2D $= Just texObject
+
+    GL.texImage2D GL.Texture2D
+        -- No proxy.
+        GL.NoProxy
+        -- Mipmaps.
+        0
+        -- Use RGB format.
+        GL.RGB'
+        -- Size of image.
+        (GL.TextureSize2D w h)
+        -- No borders
+        0
+        -- The pixel data.
+        (GL.PixelData GL.RGB GL.UnsignedByte ptr)
+
+    --GL.textureBinding GL.Texture2D $= Just texObject
+    GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
+    GL.textureWrapMode GL.Texture2D GL.S $= (GL.Mirrored, GL.ClampToEdge)
+    GL.textureWrapMode GL.Texture2D GL.T $= (GL.Mirrored, GL.ClampToEdge)
+
+
+    return texObject
+
+-- TODO: add support for all (most) colorspaces / formats.
+juicyLoadImageRaw :: FilePath -> IO (GL.GLint, GL.GLint, Ptr Word8)
+juicyLoadImageRaw file = do
+    image <- Juicy.readImage file
+
+    case image of
+        Left err -> error err
+
+        Right (Juicy.ImageRGB8 (Juicy.Image w h dat)) ->
+            V.unsafeWith dat $ \ptr ->
+                return (fromIntegral w, fromIntegral h, ptr)
+        Right (Juicy.ImageYCbCr8 img) ->
+            let (Juicy.Image w h dat) =
+                    JTypes.convertImage img :: Juicy.Image Juicy.PixelRGB8
+            in V.unsafeWith dat $ \ptr ->
+                return (fromIntegral w, fromIntegral h, ptr)
+        Right (Juicy.ImageCMYK8 img) ->
+            let (Juicy.Image w h dat) =
+                    JTypes.convertImage img :: Juicy.Image Juicy.PixelRGB8
+            in V.unsafeWith dat $ \ptr ->
+                return (fromIntegral w, fromIntegral h, ptr)
+        _ -> error $
+            "Engine.Graphics.Texture.juicyLoadImage:"
+                ++ "bad image colorspace or format."
+
+-----------------
+-- Framebuffer --
+-----------------
+
+data FBO = FBO
+    GL.FramebufferObject GL.Size GL.TextureObject
+  deriving (Show)
+
+fboSampler :: FBO -> Sampler2D
+fboSampler (FBO _ _ texObj) = Sampler2DInfo texObj $ GL.TextureUnit 0
+
+drawProgramWithPP :: ShaderProgram t -> [ShaderProgram t] -> FBO -> t -> IO ()
+drawProgramWithPP mainSh postSh fbo@(FBO fbuf size _) global = do
+    GL.bindFramebuffer GL.Framebuffer $= fbuf
+    GL.viewport $= (GL.Position 0 0, size)
+    drawProgram mainSh global
+
+    GL.bindFramebuffer GL.Framebuffer $= GL.defaultFramebufferObject    
+    drawPosts fbo postSh global
+
+drawPosts :: FBO -> [ShaderProgram t] -> t -> IO ()
+drawPosts fbo (shader : y : xs) global = do
+    drawPost fbo shader global
+    drawPosts fbo (y:xs) global
+drawPosts fbo [shader] global = do
+    GL.bindFramebuffer GL.Framebuffer $= GL.defaultFramebufferObject
+    drawPost fbo shader global
+drawPosts _ _ _ = return ()
+
+drawPost :: FBO -> ShaderProgram t -> t -> IO ()
+drawPost (FBO _ _ texObj) (ShaderProgram prog _ attribs unis) global = do
+    -- Use shader program.
+    GL.currentProgram $= Just prog
+
+    -- Activate FBO.
+    GL.activeTexture $= GL.TextureUnit 0
+    GL.textureBinding GL.Texture2D $= Just texObj
+
+    -- Bind all vars.
+    mapM_ (bindAttrib global) attribs
+    mapM_ (bindUniform global) unis
+
+    -- Draw.
+    let len = lenAttr $ head attribs
+    GL.drawArrays GL.Triangles 0 len
+
+    -- Unbind ArrayBuffer.
+    GL.bindBuffer GL.ArrayBuffer $= Nothing
+    -- Turn off shader.
+    GL.currentProgram $= Nothing
+  where
+    lenAttr (AttribGPU _ _ _ _ len) = len
+
+makeFramebuffer :: (GL.GLsizei, GL.GLsizei) -> IO FBO
+makeFramebuffer (winW, winH) = do
+    -- Create texture (color buffer).
+    fbTex <- GL.genObjectName
+    GL.textureBinding GL.Texture2D $= Just fbTex
+    -- Specify texture filtering and wraping.
+    GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
+    GL.textureWrapMode GL.Texture2D GL.S $= (GL.Mirrored, GL.ClampToEdge)
+    GL.textureWrapMode GL.Texture2D GL.T $= (GL.Mirrored, GL.ClampToEdge)
+    -- Fill the texture with nothing, give OpenGL
+    -- its specs.
+    GL.texImage2D GL.Texture2D
+        GL.NoProxy
+        0
+        GL.RGB'
+        (GL.TextureSize2D winW winH)
+        0
+        (GL.PixelData GL.RGB GL.UnsignedByte nullPtr)
+    GL.textureBinding GL.Texture2D $= Nothing
+
+    -- Create depth buffer.
+    depthRenderbuffer <- GL.genObjectName
+    GL.bindRenderbuffer GL.Renderbuffer $= depthRenderbuffer
+    let rbufSize = GL.RenderbufferSize winW winH
+    GL.renderbufferStorage GL.Renderbuffer GL.DepthComponent' rbufSize
+    GL.bindRenderbuffer GL.Renderbuffer $= GL.noRenderbufferObject
+
+    -- Create an FBO and bind it.
+    fbName <- GL.genObjectName
+    GL.bindFramebuffer GL.Framebuffer $= fbName
+    -- Set Framebuffer's depth buffer.
+    GL.framebufferRenderbuffer GL.Framebuffer
+        GL.DepthAttachment GL.Renderbuffer depthRenderbuffer
+    -- Set Framebuffer's texture.
+    GL.framebufferTexture2D GL.Framebuffer (GL.ColorAttachment 0)
+                            GL.Texture2D fbTex 0
+
+    GL.drawBuffers $= [GL.FBOColorAttachment 0]
+
+    fbufStatus <- GL.get $ GL.framebufferStatus GL.Framebuffer
+    when (fbufStatus /= GL.Complete) $ do
+        error $ "frambufferStatus returned a value " ++
+                "other than 'Complete'. Status returned: '" ++
+                show fbufStatus ++ "'."
+
+    return $ FBO fbName (GL.Size winW winH) fbTex
+
+screenBufferData :: [Vec3 GL.GLfloat]
+screenBufferData =
+    [(-1.0) :. (-1.0) :. 0.0 :. (),
+     1.0    :. (-1.0) :. 0.0 :. (),
+     (-1.0) :. 1.0    :. 0.0 :. (),
+     (-1.0) :. 1.0    :. 0.0 :. (),
+     1.0    :. (-1.0) :. 0.0 :. (),
+     1.0    :. 1.0    :. 0.0 :. ()]
+{-# INLINE screenBufferData #-}
