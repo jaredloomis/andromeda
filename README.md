@@ -75,11 +75,12 @@ generates:
 ```GLSL
 #version 430 core
 
-out vec3 color;
+out vec4 color;
 
 void main()
 {
-    color = vec3(1, 0, 0);
+    color.xyz = vec3(1, 0, 0);
+    color.w = 1;
 }
 ```
 
