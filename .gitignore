@@ -1,1 +1,4 @@
-*.swp\n*.o\n*.dyn*\n*.hi
+*.swp
+*.o
+*.dyn*
+*.hi
