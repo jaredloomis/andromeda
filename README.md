@@ -21,6 +21,7 @@ The following Haskell code:
 ```Haskell
 import Language.GLSL.Monad
 import qualified Graphics.Rendering.OpenGL as GL
+import Data.Vec ((:.)(..), Vec3)
 
 data Object = Object {
     objectVertices :: [Vec3 GL.GLfloat]
