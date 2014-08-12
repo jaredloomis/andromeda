@@ -132,7 +132,7 @@ TODO: more examples.
 --
 
 <h4>LICENSE</h4>
-All source code in this repository is provided under the wtfpl version 2:
+All source code in this repository is provided under the WTFPL Version 2.
 ```
         DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE 
                     Version 2, December 2004 
