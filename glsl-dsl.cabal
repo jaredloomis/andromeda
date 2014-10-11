@@ -57,7 +57,7 @@ library
   other-extensions:    OverloadedStrings, TypeFamilies, MultiParamTypeClasses, FlexibleContexts, DataKinds, PolyKinds, FlexibleInstances, NoMonomorphismRestriction, ExistentialQuantification, TypeOperators, GADTs, GeneralizedNewtypeDeriving, TupleSections, ScopedTypeVariables, UndecidableInstances
   
   -- Other library packages from which modules are imported.
-  build-depends:       base >=4.7 && <4.8, Vec >=1.0 && <1.1, OpenGL >=2.9 && <2.10, time >=1.4 && <1.5, mtl >=2.1 && <2.2, bytestring >=0.10 && <0.11, OpenGLRaw >=1.5 && <1.6, GLFW-b >=1.4 && <1.5
+  build-depends:       base >=4.7 && <4.8, Vec >=1.0 && <1.1, OpenGL >=2.9 && <2.10, time >=1.4 && <1.5, mtl >=2.1 && <2.2, bytestring >=0.10 && <0.11, OpenGLRaw >=1.5 && <1.6, GLFW-b >=1.4 && <1.5, JuicyPixels >= 3.1 && < 3.2, vector >= 0.10 && < 0.11
   
   -- Directories containing source files.
   -- hs-source-dirs:      
