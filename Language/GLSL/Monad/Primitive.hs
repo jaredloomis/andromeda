@@ -16,20 +16,15 @@ module Language.GLSL.Monad.Primitive where
 import Control.Monad (unless, when)
 import Control.Applicative ((<$>))
 import Data.Monoid ((<>), mempty)
+import Data.Proxy
 
 import Foreign (Word8)
-import Unsafe.Coerce (unsafeCoerce)
 import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.Marshal.Array (withArray, withArrayLen)
 import Foreign.Storable (Storable, sizeOf)
 
 import Data.Vec
-    ((:.)(..), Vec3, Vec2, Mat44, matToLists, perspective,
-     multmm, translation, matToList,
-     rotationEuler)
-import qualified Data.Vec as V (map)
-
-import Data.Time.Clock (utctDayTime, getCurrentTime)
+    ((:.)(..), Vec3, Mat44, matToLists, matToList)
 
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
@@ -44,7 +39,9 @@ import qualified Graphics.Rendering.OpenGL as GL
 import Graphics.Rendering.OpenGL.Raw (glUniformMatrix4fv)
 import qualified Graphics.UI.GLFW as GLFW
 
-import Language.GLSL.Monad.GLSL hiding (($=), simpleProgram)
+import Language.GLSL.Monad.Type
+import Language.GLSL.Monad.GLSL hiding (($=))
+import Language.GLSL.Monad.GPU
 
 ---------------------
 -- Default actions --
@@ -228,22 +225,22 @@ mainLoop win univ = do
 ------------------------------------------
 
 data Shader (p :: GL.ShaderType) t =
-    Shader (ShaderTypeProxy p) (ShaderM p t ())
-  | FromBS (ShaderTypeProxy p) (GLSLInfo t) B.ByteString
-  | FromFile (ShaderTypeProxy p) (GLSLInfo t) FilePath
+    Shader (Proxy p) (ShaderM p t ())
+  | FromBS (Proxy p) (GLSLInfo t) B.ByteString
+  | FromFile (Proxy p) (GLSLInfo t) FilePath
 
 type ShaderSequence t = [WrappedShader t]
 data WrappedShader t =
-    forall p. (ShaderTypeVal (ShaderTypeProxy p)) =>
+    forall p. (ShaderTypeVal (Proxy p)) =>
         Wrapped (Shader p t)
 
-(-&>) :: ShaderTypeVal (ShaderTypeProxy p) =>
+(-&>) :: ShaderTypeVal (Proxy p) =>
     Shader p t -> ShaderSequence t -> ShaderSequence t
 (-&>) shader1 wrappedOnes =
     Wrapped shader1 : wrappedOnes
 infixr 5 -&>
 
-lastly :: ShaderTypeVal (ShaderTypeProxy p) =>
+lastly :: ShaderTypeVal (Proxy p) =>
     Shader p t -> [WrappedShader t]
 lastly = return . Wrapped
 
@@ -254,21 +251,19 @@ data ShaderProgram t =
         [AttribGPU t]
         [UniformGPU t]
 
-data ShaderTypeProxy (t :: GL.ShaderType) = Proxy
-
 class ShaderTypeVal a where
     typeVal :: a -> GL.ShaderType
-instance ShaderTypeVal (ShaderTypeProxy GL.VertexShader) where
+instance ShaderTypeVal (Proxy GL.VertexShader) where
     typeVal = const GL.VertexShader
-instance ShaderTypeVal (ShaderTypeProxy GL.TessControlShader) where
+instance ShaderTypeVal (Proxy GL.TessControlShader) where
     typeVal = const GL.TessControlShader
-instance ShaderTypeVal (ShaderTypeProxy GL.TessEvaluationShader) where
+instance ShaderTypeVal (Proxy GL.TessEvaluationShader) where
     typeVal = const GL.TessEvaluationShader
-instance ShaderTypeVal (ShaderTypeProxy GL.GeometryShader) where
+instance ShaderTypeVal (Proxy GL.GeometryShader) where
     typeVal = const GL.GeometryShader
-instance ShaderTypeVal (ShaderTypeProxy GL.FragmentShader) where
+instance ShaderTypeVal (Proxy GL.FragmentShader) where
     typeVal = const GL.FragmentShader
-instance ShaderTypeVal (ShaderTypeProxy GL.ComputeShader) where
+instance ShaderTypeVal (Proxy GL.ComputeShader) where
     typeVal = const GL.ComputeShader
 
 -----------------------------------
@@ -354,7 +349,7 @@ compileAll (Wrapped current : rest) = do
     return $ firstPrograms : otherPrograms
 compileAll [] = return []
 
-compile :: ShaderTypeVal (ShaderTypeProxy p) =>
+compile :: ShaderTypeVal (Proxy p) =>
             Shader p t -> IO GL.Shader
 compile (Shader proxy glsl) =
     let code = generateGLSL glsl
@@ -530,6 +525,12 @@ uniBind (UniformSampler2D valueFunc _) location global = do
     GL.activeTexture $= textureUnit
     GL.textureBinding GL.Texture2D $= Just textureObject
     GL.uniform location $= GL.Index1 (fromIntegral textureId :: GL.GLint)
+uniBind (UniformSampler3D valueFunc _) location global = do
+    let Sampler3DInfo textureObject textureUnit = valueFunc global
+        GL.TextureUnit textureId = textureUnit
+    GL.activeTexture $= textureUnit
+    GL.textureBinding GL.Texture3D $= Just textureObject
+    GL.uniform location $= GL.Index1 (fromIntegral textureId :: GL.GLint)
 
 -- | Translate from Vec's format (row-major) to
 --   OpenGL format (column-major).
@@ -553,10 +554,10 @@ uniName (UniformVec3 _ name) = name
 uniName (UniformVec4 _ name) = name
 uniName (UniformMat4 _ name) = name
 uniName (UniformSampler2D _ name) = name
+uniName (UniformSampler3D _ name) = name
 
 bindUniform :: t -> UniformGPU t -> IO ()
 bindUniform global (UniformGPU _ bindFunc) = bindFunc global
-
 
 -- | Load an image and turn it into something OpenGL can use.
 juicyLoadTexture :: FilePath -> IO GL.TextureObject
@@ -584,7 +585,6 @@ juicyLoadTexture file = do
     GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
     GL.textureWrapMode GL.Texture2D GL.S $= (GL.Mirrored, GL.ClampToEdge)
     GL.textureWrapMode GL.Texture2D GL.T $= (GL.Mirrored, GL.ClampToEdge)
-
 
     return texObject
 
