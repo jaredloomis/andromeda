@@ -62,7 +62,7 @@ data Type =
   deriving Eq
 
 pairSuffix :: (Name, Name)
-pairSuffix = ("pairA", "pairB")
+pairSuffix = ("_pairA", "_pairB")
 
 instance Show Type where
     show GInt = "int"

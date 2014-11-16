@@ -52,7 +52,8 @@ class ShaderType (s :: GL.ShaderType) where
         Proxy t -> B.ByteString -> ShaderM s gt (Value 'Out t)
     out = layoutOut []
 
-{- -- TODO: This would be nice.
+{-
+-- TODO: This would be nice.
 inn' :: (ShaderType s, GPU t, Reify t Type) =>
         InArgs s gt t -> ShaderM s gt (Value 'In t)
 inn' = inn Proxy

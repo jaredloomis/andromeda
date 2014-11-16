@@ -30,9 +30,6 @@ import Language.GLSL.Monad.Type
 class GPU (a :: Type) where
     type CPU a :: *
 
-    backToGPU :: CPU a -> Proxy a
-    backToGPU _ = Proxy
-
     inConstr :: Proxy a -> (t -> [CPU a]) -> Name -> In t
     uniformConstr :: Proxy a -> (t -> CPU a) -> Name -> Uniform t
     outConstr :: Proxy a -> Name -> Out
@@ -146,12 +143,12 @@ instance MonadWriter ([GLSLUnit], GLSLInfo t) (ShaderM s t) where
 instance MonadState ShaderState (ShaderM s t) where
     state = ShaderM . state
 
-data GLSLUnit =
-    Version B.ByteString
-  | Decl Layout Qualifier Type Name
-  | AssignStatement Name B.ByteString
-  | Action B.ByteString
-  deriving Eq
+data GLSLUnit where
+    Version :: B.ByteString -> GLSLUnit
+    Decl :: Layout -> Qualifier -> Type -> Name -> GLSLUnit
+    AssignStatement :: Type -> Name -> B.ByteString -> GLSLUnit
+--  | AssignStatement Name B.ByteString
+    Action :: B.ByteString -> GLSLUnit
 
 newtype Layout = Layout [B.ByteString]
   deriving (Show, Eq, Monoid)
@@ -160,15 +157,6 @@ newtype Layout = Layout [B.ByteString]
 
 class Reify a b | a -> b where
     reify :: Proxy a -> b
-
-qualifierSymbol :: KnownSymbol q => Proxy q -> Qualifier
-qualifierSymbol q =
-    case symbolVal q of
-        "uniform" -> Uniform
-        "in" -> In
-        "out" -> Out
-        "none" -> None
-        _ -> error "Primitive.toTypeQ"
 
 instance Reify GInt Type where
     reify _ = GInt

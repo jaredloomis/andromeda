@@ -84,9 +84,17 @@ instance BShow GLSLUnit where
         bshow qualifier <> " " <>
         bshow glType <> " " <>
         name <> ";\n"
-    bshow (AssignStatement a b) =
-        a <> " = " <> b <> ";\n"
-    bshow (Action a) = a -- <> ";\n"
+    bshow (AssignStatement (GPair ta tb) valName exprStr) =
+        let (sufa, sufb) = pairSuffix
+            namea = valName <> sufa
+            nameb = valName <> sufb
+            expa = exprStr <> sufa
+            expb = exprStr <> sufb
+        in bshow (AssignStatement ta namea expa) <>
+           bshow (AssignStatement tb nameb expb)
+    bshow (AssignStatement _ val expr) =
+        val <> " = " <> expr <> ";\n"
+    bshow (Action a) = a  -- <> ";\n"
 
 defaultValue :: Type -> B.ByteString
 defaultValue GInt = "0"
@@ -166,17 +174,21 @@ expandPairs [] = []
 -- Assignment --
 ----------------
 
-(#=) :: (HasGPUCode a, HasGPUCode b,
+(#=) :: forall a b s t.
+        (HasGPUCode a, HasGPUCode b,
          WritableQ a, ReadableQ b,
-         TypeOf a ~ TypeOf b) =>
+         TypeOf a ~ TypeOf b,
+         Reify (TypeOf a) Type) =>
     a -> b -> ShaderM s t ()
 (#=) to from =
-    ltell $ AssignStatement (getGPUCode to) (getGPUCode from)
+    ltell $ AssignStatement (reify (Proxy :: Proxy (TypeOf a)))
+            (getGPUCode to) (getGPUCode from)
 infixr 1 #=
 
 ($=) :: (HasGPUCode a, HasGPUCode b,
          WritableQ a, ReadableQ b,
-         TypeOf a ~ TypeOf b) =>
+         TypeOf a ~ TypeOf b,
+         Reify (TypeOf a) Type) =>
     ShaderM s t a -> b -> ShaderM s t a
 ($=) to from = do
     toVal <- to
