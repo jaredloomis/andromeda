@@ -8,6 +8,8 @@ import GHC.TypeLits
 import Data.Word (Word)
 import Data.Vec (Vec2,Vec3,Vec4,Mat22,Mat33,Mat44)
 
+import qualified Graphics.Rendering.OpenGL.GL as GL
+
 import HasGLSL
 import NatR
 import Utils
@@ -116,6 +118,7 @@ class HasGLSL a => HasType a where
 -- | Types whose GLSL counterparts are scalars.
 class HasType a => KnownScalar a where
     scalarType :: a -> Scalar a
+    glScalarType :: a -> GL.DataType
 
 instance HasType () where
     typeOf _ = UnitT
@@ -168,12 +171,16 @@ instance HasType (Mat44 Float) where
 
 instance KnownScalar Int where
     scalarType _ = SInt
+    glScalarType _ = GL.Int
 instance KnownScalar Word where
     scalarType _ = SUInt
+    glScalarType _ = GL.UnsignedInt
 instance KnownScalar Float where
     scalarType _ = SFloat
+    glScalarType _ = GL.Float
 instance KnownScalar Bool where
     scalarType _ = SBool
+    glScalarType _ = GL.UnsignedByte
 
 
 {-

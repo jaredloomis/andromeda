@@ -41,10 +41,10 @@ instance (Num a, HasGLSL a, HasType a) => Num (Expr a) where
     signum = error "Called signum on 'Expr a'."
 
 instance (Fractional a, HasGLSL a, HasType a) => Fractional (Expr a) where
-    fromRational rat =
-        Lit (Native $ paren (show (numerator rat)) ++ " / " ++
-                      paren (show (denominator rat)))
-    n / d = Lit (Native $ paren (toGLSL n) ++ " / " ++ paren (toGLSL d))
+    fromRational rat = Lit (BinOp "/") :$
+                       (fromInteger (numerator rat) :: Expr Int) :$
+                       (fromInteger (denominator rat) :: Expr Int)
+    n / d = Lit (BinOp "/") :$ n :$ d
 
 instance HasGLSL (Expr a) where
     toGLSL (Var (V n _)) = n
@@ -60,7 +60,7 @@ instance HasGLSL (Expr a) where
                     UnOp f  -> f ++ assertArgLen args 1 (paren argsStr)
                     BinOp f -> assertArgLen args 2 $
                         paren (toGLSL (head args))
-                        ++ f ++
+                        ++ " " ++ f ++ " " ++
                         paren (toGLSL (last args))
                     FieldAccess f -> assertArgLen args 1 $
                         paren (toGLSL (head args)) ++ "." ++ f
@@ -121,10 +121,10 @@ instance HasType a => IsString (V a) where
 -- | A pattern for a Variable.
 type Pat a = Glom V a
 
-pat :: forall a. (HasType a, HasGLSL a) => String -> Pat a
+pat :: forall a. HasType a => String -> Pat a
 pat vname = dvy "" (typeOf (undefined :: a))
   where
-    dvy :: (HasType s, HasGLSL s) => String -> Type s -> Pat s
+    dvy :: HasType s => String -> Type s -> Pat s
     dvy _   UnitT      = UnitG
     dvy str (a :*:  b) = dvy (fstP str) a :* dvy (sndP str) b
     dvy _   (_ :->: _) = error "pat: Can't create a pattern for (:->:)."
@@ -176,10 +176,6 @@ instance HasGLSL (Lit a) where
 
 -- | A function that can be lifted into an
 --   'Expr' via 'Lam'.
---   The type of 'lam' can be thought of as
---   @
---   lam :: (Expr a -> Expr b -> Expr c -> ...) -> Expr (a -> b -> c -> ...)
---   @
 class Lambda a where
     type LamTy a :: *
     lam :: a -> Expr (LamTy a)

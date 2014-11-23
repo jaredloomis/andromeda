@@ -35,13 +35,13 @@ instance HasGLSL a => HasGLSL (Vec2 a) where
 instance HasGLSL a => HasGLSL (Vec3 a) where
     toGLSL (x:.y:.z:.()) =
         "vec3(" ++ toGLSL x ++ ", " ++
-                   toGLSL y ++
+                   toGLSL y ++ ", " ++
                    toGLSL z ++ ")"
 instance HasGLSL a => HasGLSL (Vec4 a) where
     toGLSL (x:.y:.z:.w:.()) =
         "vec4(" ++ toGLSL x ++ ", " ++
-                   toGLSL y ++
-                   toGLSL z ++
+                   toGLSL y ++ ", " ++
+                   toGLSL z ++ ", " ++
                    toGLSL w ++ ")"
 -- Mats
 instance HasGLSL a => HasGLSL (Mat22 a) where

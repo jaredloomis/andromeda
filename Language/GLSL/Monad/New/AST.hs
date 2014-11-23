@@ -7,6 +7,7 @@ module Main where --Language.GLSL.Monad.AST where
 import GHC.TypeLits
 
 import Data.Vec ((:.)(..), Vec2, Vec3, Vec4)
+import qualified Data.Vec as Vec
 
 import GLSL
 import Expr
@@ -15,13 +16,23 @@ import NatR
 import HasGLSL
 import Utils
 import StdLib
+import Shader
 
 main :: IO ()
-main = putStrLn $ toGLSL myShDef
+main = do
+    win <- openWindow
+    initGL win
+    prog <- compile simpleV simpleF triangle
+    mainLoop win prog
+
+triangle :: [Vec3 Float]
+triangle = [(-1):.(-1):.0:.(),
+              1 :.(-1):.0:.(),
+              0 :.  1 :.0:.()]
 
 pixelV :: Expr (Vec3 Float -> Vec2 Float -> (Vec3 Float, Vec2 Float))
-pixelV = lam $ \position textureCoord ->
-    pair :$ position :$ textureCoord
+pixelV = pair {-lam $ \position textureCoord ->
+    pair :$ position :$ textureCoord-}
 
 pixelF :: Expr (Sampler 2 -> Vec2 Float -> (Vec4 Float, Int))
 pixelF = lam $ \renderedTexture textureCoord ->
@@ -51,6 +62,15 @@ pixelAp =
         renderedTex = sampler natr "renderedTexture"
         apF = pixelF :$ renderedTex :$ tc
     in betaReduce apF
+
+simpleV :: Expr (Vec3 Float -> (Vec4 Float, Vec3 Float))
+simpleV = Lam $ \expr ->
+    let var = Lit (FieldAccess "xyz") :$ expr
+        vec4 = Lit (Native "vec4") :: Expr (Vec3 Float -> Float -> Vec4 Float)
+    in pair :$ (vec4 :$ var :$ 1.0) :$ var
+
+simpleF :: Expr (Vec3 Float -> Vec3 Float)
+simpleF = Lam . const $ Lit (Literal (1:.0:.0:.()))
 
 myShDef :: Definition
 myShDef =

@@ -2,10 +2,14 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DeriveFunctor #-}
 module GLSL where
 
 import GHC.Stack (errorWithStackTrace)
 import Unsafe.Coerce (unsafeCoerce)
+
+import Control.Monad.Free
 
 import HasGLSL
 import Glom
@@ -19,11 +23,21 @@ instance HasGLSL Qualifier where
     toGLSL Out = "out"
     toGLSL Uniform = "uniform"
 
-data Statement =
-    Assign Bind
+data Statement next =
+    Assign Bind next
+  | Done
+  deriving (Functor)
 
-instance HasGLSL Statement where
-    toGLSL (Assign b) = toGLSL b
+type Stmt a = Free Statement a
+
+instance HasGLSL next => HasGLSL (Statement next) where
+    toGLSL (Assign b next) = toGLSL b ++ "\n" ++ toGLSL next
+    toGLSL Done = ""
+--    toGLSL (Then a b) = toGLSL a ++ "\n" ++ toGLSL b
+
+instance HasGLSL (Stmt ()) where
+    toGLSL (Free x) = toGLSL x
+    toGLSL (Pure ()) = ""
 
 data Bind = forall a. HasGLSL a => Bind (Pat a) (Expr a)
 
@@ -33,7 +47,7 @@ instance HasGLSL Bind where
         let (a,b) = unPair e
         in toGLSL (Bind l a) ++ "\n" ++ toGLSL (Bind r b)
     toGLSL (Bind (BaseG (V name ty)) e) =
-        toGLSL ty ++ " " ++ -- XXX: ????
+--        toGLSL ty ++ " " ++ -- XXX: ????
         name ++ " = " ++ toGLSL e ++ ";\n"
 
 data Declaration = forall a. Declaration Qualifier (Pat a)
@@ -54,7 +68,7 @@ data Definition =
         (Maybe (Vect n a))  -- Return type ('Nothing' is void)
         String              -- Name
         --[Param]
-        Statement
+        (Free Statement ())
 
 instance HasGLSL Definition where
     toGLSL (Definition mty name body) =
@@ -62,8 +76,8 @@ instance HasGLSL Definition where
         "() {\n" ++ toGLSL body ++ "}\n"
 
 infix 1 =:
-(=:) :: (HasType a, HasGLSL a) => Pat a -> Expr a -> Statement
-(=:) p e = Assign (Bind p e)
+(=:) :: (HasType a, HasGLSL a) => Pat a -> Expr a -> Stmt ()
+(=:) p e = Free $ Assign (Bind p e) (Pure ())
 
 ------------
 -- Unpair --
