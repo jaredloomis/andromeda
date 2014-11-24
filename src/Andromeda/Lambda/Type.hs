@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 module Andromeda.Lambda.Type where
 
@@ -110,7 +111,6 @@ type family MatN (n :: Nat) :: * where
     MatN 2 = Mat22 Float
     MatN 3 = Mat33 Float
     MatN 4 = Mat44 Float
-
 
 ---------------------------
 -- HasType / KnownScalar --

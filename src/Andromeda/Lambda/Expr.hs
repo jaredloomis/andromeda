@@ -32,7 +32,7 @@ infixr 9 ~>
 instance Show (Expr a) where
     show (Var v) = "Var (" ++ show v ++ ")"
     show (Lit l) = "Lit (" ++ show l ++ ")"
-    show (Lam _) = "Lam (....)"
+    show (Lam _) = "Lam (...)"
     show (a:$ b) = "(" ++ show a ++ ") :$ (" ++ show b ++ ")"
 
 instance HasGLSL (Expr a) where

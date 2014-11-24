@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 module Main where --Language.GLSL.Monad.AST where
 
 import GHC.TypeLits
@@ -10,10 +11,10 @@ import GHC.TypeLits
 import Data.Vec ((:.)(..), Vec2, Vec3, Vec4, Mat44)
 import qualified Data.Vec as Vec
 
-import Expr
-import Utils
-import StdLib
-import Shader
+import Andromeda.Lambda.Expr
+import Andromeda.Lambda.Utils
+import Andromeda.Lambda.StdLib
+import Andromeda.Lambda.Shader
 
 main :: IO ()
 main = do
@@ -47,6 +48,15 @@ pixelF = lam $ \renderedTexture textureCoord ->
         tex     = texture :$ renderedTexture :$ (vec2 :$ cx :$ cy)
                     :: Expr (Vec4 Float)
     in pair :$ tex :$ 10
+
+vertexShader :: Expr (Vec3 Float -> Vec4 Float)
+vertexShader = Lam $ (+-+ (1 :: Expr Float))
+
+fragmentShader :: Expr (Vec4 Float)
+fragmentShader = 1 +-+ flt 0 +-+ flt 0 +-+ flt 1
+
+flt :: Expr Float -> Expr Float
+flt = id
 
 simpleV :: Expr (Vec3 Float -> (Vec4 Float, Vec3 Float))
 simpleV = Lam $ \expr ->
