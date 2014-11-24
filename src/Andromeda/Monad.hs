@@ -1,18 +1,11 @@
 module Andromeda.Monad (
-    module Andromeda.Monad.GLSL,
-    module Andromeda.Monad.Primitive,
-    module Andromeda.Monad.Vec,
-    module Andromeda.Monad.ShaderType,
-    module Andromeda.Monad.StdLib,
-    module Andromeda.Monad.GPU,
-    module Andromeda.Monad.Struct,
-    module Andromeda.Monad.Type
+    module Export
 ) where
-import Andromeda.Monad.GLSL
-import Andromeda.Monad.Primitive
-import Andromeda.Monad.Vec
-import Andromeda.Monad.ShaderType
-import Andromeda.Monad.StdLib
-import Andromeda.Monad.GPU
-import Andromeda.Monad.Struct
-import Andromeda.Monad.Type
+import Andromeda.Monad.GLSL as Export
+import Andromeda.Monad.Primitive as Export
+import Andromeda.Monad.Vec as Export
+import Andromeda.Monad.ShaderType as Export
+import Andromeda.Monad.StdLib as Export
+import Andromeda.Monad.GPU as Export
+import Andromeda.Monad.Struct as Export
+import Andromeda.Monad.Type as Export
