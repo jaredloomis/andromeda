@@ -16,6 +16,7 @@ import Andromeda.Lambda.StdLib
 import Andromeda.Lambda.Shader
 import Andromeda.Lambda.Utils
 import Andromeda.Lambda.GLSL
+import Andromeda.Lambda.Type
 
 main :: IO ()
 main = do
@@ -23,9 +24,11 @@ main = do
     initGL win
     prog <- compile simpleV simpleF
         (UniformInput 33 `PairI` InInput triangle)
-        (const $ UniformInput 33 `PairI` InInput triangle)
+        wasabi
         --(\i -> InInput $ map (+(i:.0:.0:.())) triangle)
-    mainLoop win prog (0::Float) (+0.001)
+    mainLoop win prog (0::Float) (+0.01)
+
+wasabi i = UniformInput i `PairI` InInput triangle
 
 triangle :: [Vec3 Float]
 triangle = [(-1):.(-1):.0:.(),
@@ -71,12 +74,12 @@ simpleV = Lam $ \expr ->
     in pair :$ (vec4 :$ xyzE :$ 1.0) :$ xyzE
 -}
 
-simpleV :: Expr ((Float, Vec3 Float) -> (Vec4 Float, Vec3 Float))
+simpleV :: Expr ((Float, Vec3 Float) -> (Vec4 Float, Float))
 simpleV = Lam $ \p -> --Lam $ \offs -> Lam $ \expr ->
     let (offs, expr) = unPair p
         xyzE = expr ! X & Y & Z
-        newE = xyzE ! X & Y +-+ (xyzE ! Z) + offs
-    in pair :$ (newE +-+ 1.0) :$ xyzE
+    in pair :$ (xyzE +-+ 1.0) :$ offs
 
-simpleF :: Expr (Vec3 Float -> Vec3 Float)
-simpleF = Lam . const $ Lit (Literal (1:.0:.0:.()))
+simpleF :: Expr (Float -> Vec3 Float)
+simpleF = Lam $ \x ->
+    sin x +-+ cos x +-+ (cos . sin) x
