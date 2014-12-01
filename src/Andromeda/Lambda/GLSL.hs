@@ -1,5 +1,4 @@
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -7,7 +6,6 @@
 module Andromeda.Lambda.GLSL where
 
 import GHC.Stack (errorWithStackTrace)
-import Unsafe.Coerce (unsafeCoerce)
 
 import Control.Monad.Free
 
@@ -81,36 +79,19 @@ infix 1 =:
 -- Unpair --
 ------------
 
-pattern PairFun t1 t2 tf ts a b = Lit (PrimOp (
-        t1 :->:
-        t2 :->:
-        (tf :*: ts)
-        )) :$ a :$ b
-
-unPair :: forall a b. (HasGLSL a, HasGLSL b) =>
+unPair :: forall a b. (HasType a, HasType b) =>
     Expr (a, b) -> (Expr a, Expr b)
 unPair = unPair' . betaReduce
 
--- TODO: Completely rewrite Pair system, it's awkward.
-unPair' :: forall a b. (HasGLSL a, HasGLSL b) =>
+unPair' :: forall a b. (HasType a, HasType b) =>
     Expr (a, b) -> (Expr a, Expr b)
 unPair' (Lit Pair :$ a :$ b) = (a, b)
-unPair' (PairFun (_ :: Type aat) (_ :: Type abt)
-                (_ :: Type rat) (_ :: Type rbt)
-                (apa  :: Expr apt) (apb  :: Expr bpt)) =
-    let aatTy = typeOf (undefined :: aat)
-        abtTy = typeOf (undefined :: abt)
-        raTy = typeOf (undefined :: rat)
-        rbTy = typeOf (undefined :: rbt)
-        aTy = typeOf (undefined :: a)
-        bTy = typeOf (undefined :: b)
-        apaTy = typeOf (undefined :: apt)
-        apbTy = typeOf (undefined :: bpt)
-    in if aatTy == apaTy && abtTy == apbTy &&
-          raTy == unsafeCoerce apaTy && rbTy == unsafeCoerce apbTy &&
-          aTy  == unsafeCoerce apaTy && bTy  == unsafeCoerce apbTy
-            then (unsafeCoerce apa, unsafeCoerce apb)
-        else errorWithStackTrace "unPair: Types are not all equal."
-unPair' (Lam f :$ x) = unPair' $ f x
-unPair' _ = errorWithStackTrace $ "unPair: Pair was made through some " ++
-                                 "unknown operation."
+unPair' (Var (V name _)) =
+    case pat name :: Pat (a, b) of
+        PairG (BaseG varA) (BaseG varB) ->
+            (Var varA, Var varB)
+        _ -> errorWithStackTrace
+            "unPair': 'pat' returned an unexpected format."
+unPair' expr = errorWithStackTrace $
+    "unPair: Pair was made through some " ++
+    "unknown operation:\n" ++ show expr

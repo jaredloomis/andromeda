@@ -11,7 +11,6 @@ import Data.Ratio (numerator, denominator)
 import Data.String (IsString(..))
 import Data.List (intercalate)
 import Control.Arrow (second)
-import Control.Applicative (Applicative(..))
 
 import Andromeda.Lambda.Type
 import Andromeda.Lambda.Glom
@@ -103,7 +102,7 @@ instance (Num a, HasGLSL a) => Num (Expr a) where
     (-) a b = Lit (BinOp "-") :$ a :$ b
     (*) a b = Lit (BinOp "*") :$ a :$ b
     abs x = Lit (Native "abs") :$ x
-    signum = error "Called signum on 'Expr a'."
+    signum = errorWithStackTrace "Called signum on 'Expr a'."
 
 instance (Fractional a, HasGLSL a) => Fractional (Expr a) where
     fromRational rat = Lit (BinOp "/") :$
@@ -183,7 +182,8 @@ pat vname = dvy "" (typeOf (undefined :: a))
     dvy :: HasType s => String -> Type s -> Pat s
     dvy _   UnitT      = UnitG
     dvy str (a :*:  b) = dvy (fstP str) a `PairG` dvy (sndP str) b
-    dvy _   (_ :->: _) = error "pat: Can't create a pattern for (:->:)."
+    dvy _   (_ :->: _) = errorWithStackTrace
+        "pat: Can't create a pattern for (:->:)."
     dvy str t          = BaseG $ V (namePath vname str) t
 
 patV :: (HasType a, HasGLSL a) => V a -> Pat a
@@ -202,14 +202,17 @@ sndP = ("snd"++)
 -- Literal --
 -------------
 
--- | A GLSL Literal.
+-- | A GLSL Literal. More constructors should only
+--   be added for glsl operations with special syntax.
 data Lit a where
     Literal :: HasGLSL a => a -> Lit a
     Native :: String -> Lit a
-    BinOp :: String -> Lit a --(Type a)
-    UnOp :: String -> Lit a --(Type a)
+
+    BinOp :: String -> Lit a
+    UnOp :: String -> Lit a
+
     FieldAccess :: String -> Lit a
-    PrimOp :: Type a -> Lit a
+
     Pair :: Lit (a -> b -> (a, b))
 
 instance Show (Lit a) where
@@ -218,7 +221,6 @@ instance Show (Lit a) where
     show (BinOp b) = "BinOp (" ++ b ++ ")"
     show (UnOp u) = "UnOp (" ++ u ++ ")"
     show (FieldAccess f) = "FieldAccess " ++ f
-    show (PrimOp{}) = "PrimOp"
     show Pair = "Pair"
 
 instance HasGLSL (Lit a) where
@@ -228,7 +230,6 @@ instance HasGLSL (Lit a) where
     toGLSL (UnOp s) = s
     toGLSL (FieldAccess f) = f
     toGLSL Pair = errorWithStackTrace "toGLSL Pair"
-    toGLSL (PrimOp _) = errorWithStackTrace "toGLSL PrimOp"
 
 instance Eq (Lit a) where
     Literal     _ == Literal     _ = True
@@ -236,7 +237,6 @@ instance Eq (Lit a) where
     BinOp       a == BinOp       b = a == b
     UnOp        a == UnOp        b = a == b
     FieldAccess a == FieldAccess b = a == b
-    PrimOp      _ == PrimOp      _ = True
     Pair          == Pair          = True
     _             == _             = False
 
@@ -265,8 +265,10 @@ instance Lambda b => Lambda (Expr a -> b) where
 --   'Lam's, where possible. All Exprs should
 --   be beta-reduced before being used.
 betaReduce :: Expr a -> Expr a
-betaReduce (Lam f :$ x) = betaReduce $ f (betaReduce x)
-betaReduce (f :$ x) = betaReduce' $ betaReduce f :$ betaReduce x
+betaReduce (Lam f :$ x) =
+    betaReduce $ f (betaReduce x)
+betaReduce (f :$ x) =
+    betaReduce' $ betaReduce f :$ betaReduce x
   where
     betaReduce' (Lam f' :$ x') = betaReduce $ f' (betaReduce x')
     betaReduce' (f' :$ x') = betaReduce f' :$ betaReduce x'

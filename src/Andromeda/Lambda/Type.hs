@@ -20,17 +20,18 @@ import qualified Graphics.Rendering.OpenGL.GL as GL
 import Andromeda.Lambda.NatR
 import Andromeda.Lambda.Utils
 
--- | Type and value-level representation
---   of GLSL Types.
+-- | Type and term-level Haskell
+--   representation of GLSL Types.
 data Type a where
-    VectT :: (KnownNat n, KnownScalar a) => Vect n a -> Type (VecN n a)
-    MatT :: KnownNat n => Mat  n -> Type (MatN n)
+    VectT    :: (KnownNat n, KnownScalar a) =>
+                 Vect n a -> Type (VecN n a)
+    MatT     :: KnownNat n => Mat  n -> Type (MatN n)
     SamplerT :: KnownNat n => NatR n -> Type (Sampler n)
-    UnitT :: Type ()
-    (:*:) :: (HasType a, HasType b, HasGLSL a, HasGLSL b) =>
-              Type a -> Type b -> Type (a, b)
-    (:->:) :: (HasType a, HasType b) =>
-               Type a -> Type b -> Type (a -> b)
+    UnitT    :: Type ()
+    (:*:)    :: (HasType a, HasType b, HasGLSL a, HasGLSL b) =>
+                 Type a -> Type b -> Type (a, b)
+    (:->:)   :: (HasType a, HasType b) =>
+                 Type a -> Type b -> Type (a -> b)
 infixr 5 :->:
 
 instance Eq (Type a) where
@@ -48,32 +49,32 @@ instance HasGLSL (Type a) where
     toGLSL (SamplerT nat) =
         "sampler" ++ show (natRToInt nat) ++ "D"
     toGLSL UnitT =
-        error $ "toGLSL Type: UnitT does not have " ++
+        errorWithStackTrace $ "toGLSL Type: UnitT does not have " ++
                 "a GLSL representation."
     toGLSL (_ :*:  _) =
-        error $ "toGLSL Type: (:*:) does not have " ++
+        errorWithStackTrace $ "toGLSL Type: (:*:) does not have " ++
                 "a GLSL representation."
     toGLSL (_ :->: _) =
-        error $ "toGLSL Type: (:->:) does not have " ++
+        errorWithStackTrace $ "toGLSL Type: (:->:) does not have " ++
                 "a GLSL representation."
 
 data Scalar a where
-    SInt :: Scalar Int
-    SUInt :: Scalar Word
+    SInt   :: Scalar Int
+    SUInt  :: Scalar Word
     SFloat :: Scalar Float
-    SBool :: Scalar Bool
+    SBool  :: Scalar Bool
 
 instance HasGLSL (Scalar a) where
-    toGLSL SInt = "int"
-    toGLSL SUInt = "uint"
+    toGLSL SInt   = "int"
+    toGLSL SUInt  = "uint"
     toGLSL SFloat = "float"
-    toGLSL SBool = "bool"
+    toGLSL SBool  = "bool"
 
 vecPrefix :: Scalar a -> String
-vecPrefix SInt = "i"
-vecPrefix SUInt = "u"
+vecPrefix SInt   = "i"
+vecPrefix SUInt  = "u"
 vecPrefix SFloat = ""
-vecPrefix SBool = "b"
+vecPrefix SBool  = "b"
 
 data Vect (n :: Nat) a where
     Vect :: NatR n -> Scalar a -> Vect n a
@@ -251,6 +252,9 @@ instance HasGLSL (Sampler n) where
 instance HasGLSL (a -> b) where
     toGLSL = errorWithStackTrace
         "toGLSL (a -> b): There isn't actually a way to do this."
+-- Uniforms
+instance HasGLSL a => HasGLSL (Unif a) where
+    toGLSL (Unif a) = toGLSL a
 
 matToGLList :: (Vec.Fold v a, Vec.Fold m v) => m -> [a]
 matToGLList = concat . toRowMajor . Vec.matToLists

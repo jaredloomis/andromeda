@@ -10,3 +10,5 @@ import Andromeda.Lambda.NatR
 
 -- | An OpenGL Sampler object, value-level.
 data Sampler (n :: Nat) = Sampler (NatR n) GL.TextureObject
+
+data Unif a = Unif a
