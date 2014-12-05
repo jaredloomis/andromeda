@@ -13,18 +13,30 @@ import Data.Proxy (Proxy(..))
 import Data.Word (Word)
 
 import Data.Vec (Vec2, Vec3, Vec4)
-import qualified Data.Vec as Vec
 
 import Andromeda.Lambda.Expr
 import Andromeda.Lambda.Type
+import Andromeda.Lambda.Utils
 
 pair :: (HasType a, HasType b) => Expr (a -> b -> (a, b))
 pair = Lit Pair
 
--- Synonyms for 'lam' --
+---------------------------------------
+-- Helpers to make Lam easier to use --
+---------------------------------------
 
---inn :: Lambda a => a -> Expr (LamTy a)
---inn = lam
+-- | A function that can be lifted into an
+--   'Expr' via 'Lam'.
+class Lambda a where
+    type LamTy a :: *
+    lam :: a -> Expr (LamTy a)
+
+instance Lambda (Expr a) where
+    type LamTy (Expr a) = a
+    lam = id
+instance Lambda b => Lambda (Expr a -> b) where
+    type LamTy (Expr a -> b) = a -> LamTy b
+    lam f = Lam $ \a -> lam (f a)
 
 -------------------
 -- Vec appending --
@@ -89,3 +101,16 @@ type family If (condition :: Bool) (yes :: Nat) (no :: Nat) :: Nat where
     If False yes no = no
 
 type Max a b = If (a <=? b) b a
+
+----------------
+-- Matrix ops --
+----------------
+
+class MatrixMult a b c | a b -> c, c b -> a, c a -> b where
+
+instance MatrixMult (Matrix 2) (Vec2 Float) (Vec2 Float)
+instance MatrixMult (Matrix 3) (Vec3 Float) (Vec3 Float)
+instance MatrixMult (Matrix 4) (Vec4 Float) (Vec4 Float)
+
+(#*) :: MatrixMult a b c => Expr a -> Expr b -> Expr c
+(#*) mat vec = Lit (BinOp "*") :$ mat :$ vec

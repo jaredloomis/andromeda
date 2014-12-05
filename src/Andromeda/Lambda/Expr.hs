@@ -36,14 +36,14 @@ instance Show (Expr a) where
 
 instance HasGLSL (Expr a) where
     toGLSL (Var (V n _)) = n
-    toGLSL (Lit lit) = toGLSL lit
+    toGLSL (Lit li) = toGLSL li
     toGLSL (Lam f :$ x) = toGLSL $ f x
     toGLSL app@(_ :$ _) =
         let (func, args) = collectArgs app
             argsStr = argsToStr args
         in case func of
-            ExprN (Lit lit) ->
-                case lit of
+            ExprN (Lit li) ->
+                case li of
                     UnOp f  -> f ++ assertArgLen args 1 (paren argsStr)
                     BinOp f -> assertArgLen args 2 $
                         paren (toGLSL (head args))
@@ -215,6 +215,9 @@ data Lit a where
 
     Pair :: Lit (a -> b -> (a, b))
 
+lit :: HasGLSL a => a -> Expr a
+lit = Lit . Literal
+
 instance Show (Lit a) where
     show (Literal l) = "Literal (" ++ toGLSL l ++ ")"
     show (Native  n) = "Native (" ++ n ++ ")"
@@ -239,23 +242,6 @@ instance Eq (Lit a) where
     FieldAccess a == FieldAccess b = a == b
     Pair          == Pair          = True
     _             == _             = False
-
----------------------------------------
--- Helpers to make Lam easier to use --
----------------------------------------
-
--- | A function that can be lifted into an
---   'Expr' via 'Lam'.
-class Lambda a where
-    type LamTy a :: *
-    lam :: a -> Expr (LamTy a)
-
-instance Lambda (Expr a) where
-    type LamTy (Expr a) = a
-    lam = id
-instance Lambda b => Lambda (Expr a -> b) where
-    type LamTy (Expr a -> b) = a -> LamTy b
-    lam f = Lam $ \a -> lam (f a)
 
 -----------------------
 -- Reduction of Expr --

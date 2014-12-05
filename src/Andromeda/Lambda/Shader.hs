@@ -5,11 +5,9 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FunctionalDependencies #-}
 module Andromeda.Lambda.Shader where
 
 import GHC.Stack (errorWithStackTrace)
@@ -17,13 +15,11 @@ import Foreign.Storable
 import Foreign.Marshal.Array (withArrayLen, withArray)
 import Foreign.Ptr (nullPtr)
 import Data.String (fromString)
-import Data.Word (Word, Word8)
-import Control.Applicative (Applicative)
 import Control.Monad.State
 import Debug.Trace (trace)
 import Unsafe.Coerce (unsafeCoerce)
 
-import Data.Vec ((:.)(..), Vec4, Vec3, Vec2)
+import Data.Vec ((:.)(..), Vec4, Vec3)
 
 import qualified Graphics.Rendering.OpenGL.GL as GL
 import qualified Graphics.UI.GLFW as GLFW
@@ -32,8 +28,7 @@ import Andromeda.Lambda.Expr
 import Andromeda.Lambda.Type
 import Andromeda.Lambda.Glom
 import Andromeda.Lambda.GLSL
---import Andromeda.Lambda.Utils
-    
+
 data Input a where
     InInput      :: [a] -> Input a
     UniformInput :: a -> Input a
@@ -67,7 +62,7 @@ instance HasAttr Float where
 
     bindAttr (BaseG (AttrPrim buffer location descriptor)) =
         bindAttrPrim buffer location descriptor
-    bindAttr (BaseG (UniformPrim x location)) = do
+    bindAttr (BaseG (UniformPrim x location)) =
         bindAttrUnif location $ GL.Index1 (unsafeCoerce x :: GL.GLfloat)
 
     replaceAttr (InInput xs)
@@ -88,7 +83,7 @@ instance HasAttr (Vec3 Float) where
 
     bindAttr (BaseG (AttrPrim buffer location descriptor)) =
         bindAttrPrim buffer location descriptor
-    bindAttr (BaseG (UniformPrim (x:.y:.z:.()) location)) = do
+    bindAttr (BaseG (UniformPrim (x:.y:.z:.()) location)) =
         bindAttrUnif location $ GL.Vertex3
             (unsafeCoerce x :: GL.GLfloat)
             (unsafeCoerce y :: GL.GLfloat)
@@ -302,7 +297,7 @@ compileGLSL src shaderType = do
     -- Check status.
     ok <- GL.get $ GL.compileStatus shader
     unless ok $
-        print =<< GL.get (GL.shaderInfoLog shader)
+        putStrLn =<< GL.get (GL.shaderInfoLog shader)
 
     return shader
 

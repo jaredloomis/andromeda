@@ -8,11 +8,12 @@ module Andromeda.Lambda.Type where
 
 import GHC.TypeLits
 import GHC.Stack (errorWithStackTrace)
+import Debug.Trace (trace)
 
 import Data.List (intercalate)
 import Data.Word (Word)
 import Data.Char (toLower)
-import Data.Vec ((:.)(..),Vec2,Vec3,Vec4,Mat22,Mat33,Mat44)
+import Data.Vec ((:.)(..),Vec2,Vec3,Vec4)
 import qualified Data.Vec as Vec
 
 import qualified Graphics.Rendering.OpenGL.GL as GL
@@ -25,7 +26,7 @@ import Andromeda.Lambda.Utils
 data Type a where
     VectT    :: (KnownNat n, KnownScalar a) =>
                  Vect n a -> Type (VecN n a)
-    MatT     :: KnownNat n => Mat  n -> Type (MatN n)
+    MatT     :: KnownNat n => Mat  n -> Type (Matrix n)
     SamplerT :: KnownNat n => NatR n -> Type (Sampler n)
     UnitT    :: Type ()
     (:*:)    :: (HasType a, HasType b, HasGLSL a, HasGLSL b) =>
@@ -106,13 +107,6 @@ type family VecN (n :: Nat) (a :: *) :: * where
     VecN 3 a = Vec3 a
     VecN 4 a = Vec4 a
 
--- | 'Data.Vec' Mat*s indexed over 'GHC.TypeLits.Nat'.
-type family MatN (n :: Nat) :: * where
-    MatN 1 = Float
-    MatN 2 = Mat22 Float
-    MatN 3 = Mat33 Float
-    MatN 4 = Mat44 Float
-
 ---------------------------
 -- HasType / KnownScalar --
 ---------------------------
@@ -160,20 +154,18 @@ instance KnownScalar a => HasType (Vec4 a) where
             scalarT = scalarType (undefined :: a)
         in VectT (Vect len scalarT)
 -- Matrices
-{-
-instance HasType (Mat22 Float) where
+instance HasType (Matrix 2) where
     typeOf _ =
         let len = TS (TS TZ)
         in MatT (Mat len)
-instance HasType (Mat33 Float) where
+instance HasType (Matrix 3) where
     typeOf _ =
         let len = TS (TS (TS TZ))
         in MatT (Mat len)
-instance HasType (Mat44 Float) where
+instance HasType (Matrix 4) where
     typeOf _ =
         let len = TS (TS (TS (TS TZ)))
         in MatT (Mat len)
--}
 -- Samplers
 instance KnownNat n => HasType (Sampler n) where
     typeOf _ =
@@ -232,16 +224,16 @@ instance KnownScalar a => HasGLSL (Vec4 a) where
                    toGLSL z ++ ", " ++
                    toGLSL w ++ ")"
 -- Mats
-instance KnownScalar a => HasGLSL (Mat22 a) where
-    toGLSL mat =
+instance HasGLSL (Matrix 2) where
+    toGLSL (Mat2 mat) =
         "mat2(" ++ intercalate ", "
         (map toGLSL (matToGLList mat)) ++ ")"
-instance KnownScalar a => HasGLSL (Mat33 a) where
-    toGLSL mat =
+instance HasGLSL (Matrix 3) where
+    toGLSL (Mat3 mat) =
         "mat3(" ++ intercalate ", "
         (map toGLSL (matToGLList mat)) ++ ")"
-instance KnownScalar a => HasGLSL (Mat44 a) where
-    toGLSL mat =
+instance HasGLSL (Matrix 4) where
+    toGLSL (Mat4 mat) =
         "mat4(" ++ intercalate ", "
         (map toGLSL (matToGLList mat)) ++ ")"
 -- Samplers
@@ -252,13 +244,16 @@ instance HasGLSL (Sampler n) where
 instance HasGLSL (a -> b) where
     toGLSL = errorWithStackTrace
         "toGLSL (a -> b): There isn't actually a way to do this."
--- Uniforms
-instance HasGLSL a => HasGLSL (Unif a) where
-    toGLSL (Unif a) = toGLSL a
 
 matToGLList :: (Vec.Fold v a, Vec.Fold m v) => m -> [a]
 matToGLList = concat . toRowMajor . Vec.matToLists
+{-
+    let ls = Vec.matToLists mat
+    in trace (show mat) . concat $ toRowMajor ls
+-}
 
 toRowMajor :: [[a]] -> [[a]]
-toRowMajor xss =
-    map head xss : toRowMajor (map tail xss)
+toRowMajor xss
+    | any null xss = []
+    | otherwise =
+        map head xss : toRowMajor (map tail xss)
