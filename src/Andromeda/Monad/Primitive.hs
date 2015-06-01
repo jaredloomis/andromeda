@@ -53,7 +53,7 @@ openWindow = do
 
     -- Give GLFW some hints.
     mapM_ GLFW.windowHint
-        [GLFW.WindowHint'OpenGLProfile GLFW.OpenGLProfile'Core,
+        [GLFW.WindowHint'OpenGLProfile GLFW.OpenGLProfile'Compat,
          GLFW.WindowHint'DepthBits 16,
          GLFW.WindowHint'Samples 4,
          GLFW.WindowHint'Resizable True,

@@ -14,6 +14,7 @@ import Andromeda.Lambda.Expr
 import Andromeda.Lambda.Type
 
 data Qualifier = In | Out | Uniform
+  deriving (Show, Eq)
 
 instance HasGLSL Qualifier where
     toGLSL In = "in"

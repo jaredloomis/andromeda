@@ -18,6 +18,7 @@ import Data.String (fromString)
 import Control.Monad.State
 import Debug.Trace (trace)
 import Unsafe.Coerce (unsafeCoerce)
+import System.Exit (exitFailure)
 
 import Data.Vec ((:.)(..), Vec4, Vec3)
 
@@ -29,9 +30,15 @@ import Andromeda.Lambda.Type
 import Andromeda.Lambda.Glom
 import Andromeda.Lambda.GLSL
 
+-- Idea
+--data Statement' where
+--    Assign :: Pat a -> Expr (i -> a) -> Input i -> Statement'
+
+
 data Input a where
     InInput      :: [a] -> Input a
     UniformInput :: a -> Input a
+    LamI         :: Input a -> Input b -> Input (a -> b)
     PairI        :: Input a -> Input b -> Input (a, b)
 
 type Attr a = Glom AttrPrim a
@@ -179,7 +186,6 @@ mainLoop win prog g update = do
         GLFW.swapBuffers win
         GLFW.pollEvents
 
-
 drawProgram :: HasAttr i => Program g i -> g -> IO (Program g i)
 drawProgram (Program prog len attr update) g = do
     GL.currentProgram GL.$= Just prog
@@ -205,13 +211,37 @@ data Program g i =
         (Attr i)
         (g -> Input i)
 
+inputPat  :: String
+inputPat  = "andromeda_input"
+interPat  :: String
+interPat  = "andromeda_inter"
+outputPat :: String
+outputPat = "andromeda_output"
+
 version :: String
 version = "#version 330 core\n"
 
 inputLen :: Input a -> Int
 inputLen (InInput xs) = length xs
 inputLen (UniformInput _) = 1
+inputLen (LamI a b) = max (inputLen a) (inputLen b)
 inputLen (PairI a b) = max (inputLen a) (inputLen b)
+
+type family Last a where
+    Last (a -> b) = Last b
+    Last  a       = a
+type family Init a where
+    Init (a -> b) = a
+
+{-
+comp :: forall i m o g last init.
+    (HasAttr i, HasType o, HasType m, HasGLSL m,
+     Last i ~ last, Init i ~ init) =>
+    Expr (i -> (Vec4 Float, m)) -> Expr (m -> o) ->
+    Input i -> (g -> Input i) ->
+    IO (Program g i)
+comp vert frag input update = undefined
+-}
 
 compile :: forall i m o g. (HasAttr i, HasType o, HasType m, HasGLSL m) =>
     Expr (i -> (Vec4 Float, m)) -> Expr (m -> o) ->
@@ -219,7 +249,7 @@ compile :: forall i m o g. (HasAttr i, HasType o, HasType m, HasGLSL m) =>
     IO (Program g i)
 compile vert frag input update =
     let len = inputLen input
-        inPat = pat "prim_input_var" :: Pat i
+        inPat = pat inputPat :: Pat i
         quals = qualifiers input
         vStr  = compileVert vert quals
         fStr  = compileFrag frag
@@ -233,16 +263,17 @@ data Quals = BaseQ Qualifier | PairQ Quals Quals
 qualifiers :: Input i -> Quals
 qualifiers (InInput _) = BaseQ In
 qualifiers (UniformInput _) = BaseQ Uniform
+qualifiers (LamI l r) = PairQ (qualifiers l) (qualifiers r)
 qualifiers (PairI l r) = PairQ (qualifiers l) (qualifiers r)
 
 compileVert :: forall i o. (HasType i, HasType o, HasGLSL o) =>
     Expr (i -> (Vec4 Float, o)) -> Quals -> String
 compileVert expr quals =
-    let inPat   = pat "prim_input_var"     :: Pat i
-        outPat  = pat "prim_vert2frag_var" :: Pat o
+    let inPat   = pat inputPat :: Pat i
+        outPat  = pat interPat :: Pat o
         inDefV  = defineTopQ quals inPat
         outDefV = defineTop Out outPat
-        apExprV = expr :$ Var (V "prim_input_var" $ typeOf (undefined :: i))
+        apExprV = expr :$ Var (V inputPat $ typeOf (undefined :: i))
         (exprVA, exprVB) = unPair apExprV
         vertStm = (outPat =: exprVB) >> (pat "gl_Position" =: exprVA)
         mainV   = Definition Nothing "main" vertStm
@@ -252,11 +283,11 @@ compileVert expr quals =
 compileFrag :: forall i o. (HasType i, HasType o) =>
     Expr (i -> o) -> String
 compileFrag expr =
-    let inPat   =  pat "prim_vert2frag_var" :: Pat i
-        outPat  =  pat "prim_output_var"    :: Pat o
+    let inPat   =  pat interPat :: Pat i
+        outPat  =  pat outputPat :: Pat o
         inDefF  = defineTop In inPat
         outDefF = defineTop Out outPat
-        apExprF = expr :$ Var (V "prim_vert2frag_var" $ typeOf (undefined :: i))
+        apExprF = expr :$ Var (V interPat $ typeOf (undefined :: i))
         mainF   = Definition Nothing "main" (outPat =: apExprF)
         fStr    = version ++ inDefF ++ outDefF ++ toGLSL mainF
     in trace fStr fStr
@@ -278,11 +309,12 @@ defineTopQ _ _ = errorWithStackTrace "defineTopQ: Quals do not match Pat."
 
 compileAndLink :: String -> String -> IO GL.Program
 compileAndLink vert frag = do
+    v <- compileGLSL vert GL.VertexShader
+    f <- compileGLSL frag GL.FragmentShader
+
     program <- GL.createProgram
 
-    v <- compileGLSL vert GL.VertexShader
     GL.attachShader program v
-    f <- compileGLSL frag GL.FragmentShader
     GL.attachShader program f
 
     GL.linkProgram program
@@ -333,23 +365,33 @@ replaceBuffer target elems len =
 
 openWindow :: IO GLFW.Window
 openWindow = do
-    _ <- GLFW.init
+    glfwOk <- GLFW.init
+
+    unless glfwOk $ do
+        putStrLn "GLFW initialize failed!!"
+        exitFailure
 
     -- Give GLFW some hints.
     mapM_ GLFW.windowHint
-        [GLFW.WindowHint'OpenGLProfile GLFW.OpenGLProfile'Core,
+        [GLFW.WindowHint'OpenGLProfile GLFW.OpenGLProfile'Compat,
          GLFW.WindowHint'DepthBits 16,
          GLFW.WindowHint'Samples 4,
          GLFW.WindowHint'Resizable True,
          GLFW.WindowHint'ClientAPI GLFW.ClientAPI'OpenGL,
-         GLFW.WindowHint'ContextVersionMajor 4,
+         GLFW.WindowHint'ContextVersionMajor 3,
          GLFW.WindowHint'ContextVersionMinor 3]
 
     -- Open window.
-    Just win <- GLFW.createWindow
+    mwin <- GLFW.createWindow
                     800
                     600
                     "GLFW Window" Nothing Nothing
+
+    win <- maybe (putStrLn "GLFW create window failed!!" >>
+                  exitFailure >> return undefined)
+                 return
+                 mwin
+
     GLFW.makeContextCurrent (Just win)
 
     -- Set resize callback.
