@@ -1,3 +1,20 @@
+This repository contains two APIs:
+    - A lambda calculus-based library that generates GLSL code
+    - A monadic eDSL that generates GLSL code
+
+Comparison of the APIs
+==
+
+<h4>Functional version</h4>
+
+```Haskell
+vertexShader :: Expr (Vec3 Float -> Vec4 Float)
+vertexShader = Lam $ (+-+ (1 :: Expr Float))
+
+fragmentShader :: Expr (Vec4 Float)
+fragmentShader = flt 1 +-+ flt 0 +-+ flt 0 +-+ fltd 1
+```
+
 Haskell GLSL eDSL
 =================
 

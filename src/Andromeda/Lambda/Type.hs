@@ -257,3 +257,10 @@ toRowMajor xss
     | any null xss = []
     | otherwise =
         map head xss : toRowMajor (map tail xss)
+
+-----------
+-- Utils --
+-----------
+
+guessTy :: forall a. HasType a => Type a
+guessTy = typeOf (undefined :: a)

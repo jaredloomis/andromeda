@@ -14,6 +14,7 @@ import Control.Arrow (second)
 
 import Andromeda.Lambda.Type
 import Andromeda.Lambda.Glom
+import Andromeda.Lambda.HasAttr
 
 -- | Lambda calculus with HOAS.
 data Expr a where
@@ -151,53 +152,6 @@ collectArgs = second reverse . collectArgsR
 argsToStr :: [ExprN] -> String
 argsToStr =  intercalate ", " . map toGLSL
 
-------------------------------
--- 'V' - Variables / Values --
-------------------------------
-
--- | A GLSL Variable.
-data V a = V String (Type a)
-
-instance Show (V a) where
-    show (V n _) = "V " ++ n
-
-instance HasGLSL (V a) where
-    toGLSL (V name ty) = toGLSL ty ++ " " ++ name
-
-instance HasType a => IsString (V a) where
-    fromString name = V name (typeOf (undefined :: a))
-
--------------
--- Pattern --
--------------
-
--- | A pattern for a Variable. This is how
---   non-native conglomerate types can be
---   expressed in glsl code and given a name.
-type Pat a = Glom V a
-
-pat :: forall a. HasType a => String -> Pat a
-pat vname = dvy "" (typeOf (undefined :: a))
-  where
-    dvy :: HasType s => String -> Type s -> Pat s
-    dvy _   UnitT      = UnitG
-    dvy str (a :*:  b) = dvy (fstP str) a `PairG` dvy (sndP str) b
-    dvy _   (_ :->: _) = errorWithStackTrace
-        "pat: Can't create a pattern for (:->:)."
-    dvy str t          = BaseG $ V (namePath vname str) t
-
-patV :: (HasType a, HasGLSL a) => V a -> Pat a
-patV (V vname _) = pat vname
-
-namePath :: String -> String -> String
-namePath vname "" = vname
-namePath vname p  = vname ++ "_" ++ p
-
-fstP :: String -> String
-fstP = ("fst"++)
-sndP :: String -> String
-sndP = ("snd"++)
-
 -------------
 -- Literal --
 -------------
@@ -215,6 +169,9 @@ data Lit a where
 
     Pair :: Lit (a -> b -> (a, b))
 
+    LitIn   :: HasAttr a => [a] -> Type a -> String -> Lit a
+    LitUnif :: HasAttr a =>  a  -> Type a -> String -> Lit a
+
 lit :: HasGLSL a => a -> Expr a
 lit = Lit . Literal
 
@@ -225,6 +182,8 @@ instance Show (Lit a) where
     show (UnOp u) = "UnOp (" ++ u ++ ")"
     show (FieldAccess f) = "FieldAccess " ++ f
     show Pair = "Pair"
+    show LitIn{} = "LitIn"
+    show LitUnif{} = "LitUnif"
 
 instance HasGLSL (Lit a) where
     toGLSL (Literal a) = toGLSL a
@@ -233,6 +192,8 @@ instance HasGLSL (Lit a) where
     toGLSL (UnOp s) = s
     toGLSL (FieldAccess f) = f
     toGLSL Pair = errorWithStackTrace "toGLSL Pair"
+    toGLSL LitIn{} = errorWithStackTrace "toGLSL LitIn"
+    toGLSL LitUnif{} = errorWithStackTrace "toGLSL LitUnif"
 
 instance Eq (Lit a) where
     Literal     _ == Literal     _ = True

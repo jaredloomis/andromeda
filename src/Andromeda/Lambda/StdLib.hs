@@ -22,8 +22,7 @@ import Andromeda.Lambda.GLSL
 type (&-) a b = (a, b)
 infixl &-
 
-pair :: (HasType a, HasType b) => Expr (a -> b -> (a, b))
-pair = Lit Pair
+
 
 ---------------------------------------
 -- Helpers to make Lam easier to use --
@@ -41,10 +40,6 @@ instance Lambda (Expr a) where
 instance Lambda b => Lambda (Expr a -> b) where
     type LamTy (Expr a -> b) = a -> LamTy b
     lam f = Lam $ \a -> lam (f a)
-
-
-
-
 
 lamp2 :: (HasType a, HasType b) => Expr (a -> b -> c) -> Expr ((a,b) -> c)
 lamp2 f = Lam $ \p ->
@@ -185,12 +180,25 @@ instance MatrixMult (Matrix 4) (Vec4 Float) (Vec4 Float)
 (#*) :: MatrixMult a b c => Expr a -> Expr b -> Expr c
 (#*) mat vec = Lit (BinOp "*") :$ mat :$ vec
 
-----------------
--- Misc utils --
-----------------
+---------------
+-- Functions --
+---------------
 
 texture :: Expr (Sampler n) -> Expr (VecN n Float) -> Expr (Vec4 Float)
 texture img vec = Lit (Native "texture") :$ img :$ vec
 
-floorE :: RealFrac a => Expr a -> Expr Int
-floorE x = Lit (Native "floor") :$ x
+floorG :: RealFrac a => Expr a -> Expr a
+floorG x = Lit (Native "floor") :$ x
+
+----------------
+-- Misc utils --
+----------------
+
+pair :: (HasType a, HasType b) => Expr a -> Expr b -> Expr (a, b)
+pair x y = Lit Pair :$ x :$ y
+
+bottom :: Expr ()
+bottom = Lit (Native "__BOTTOM__")
+
+flt :: Expr Float -> Expr Float
+flt = id
