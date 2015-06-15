@@ -1,152 +1,83 @@
-This repository contains two APIs:
-    - A lambda calculus-based library that generates GLSL code
-    - A monadic eDSL that generates GLSL code
+This repository contains 3 APIs:
+    - A  new lambda calculus-based eDSL ("Simple")
+    - An old lambda calculus-based eDSL ("Lambda")
+    - A  Monad-based, imperative eDSL
 
-Comparison of the APIs
-==
+Functional version
+==================
 
-<h4>Functional version</h4>
+As an example of what the library can do, we will make a simple application that renders a red triangle to the screen.
 
-```Haskell
-vertexShader :: Expr (Vec3 Float -> Vec4 Float)
-vertexShader = Lam $ (+-+ (1 :: Expr Float))
-
-fragmentShader :: Expr (Vec4 Float)
-fragmentShader = flt 1 +-+ flt 0 +-+ flt 0 +-+ fltd 1
-```
-
-Haskell GLSL eDSL
-=================
-
-A GLSL code generating DSL embedded in Haskell.
-
-- Removes nearly all need for communication with OpenGL.
-- Almost everything is type-checked at the Haskell type level, so many errors are caught at Haskell compile time, instead of OpenGL giving run-time errors.
-- Complete support for multi-pass postprocessing using framebuffers / sampler2Ds.
-- Uses GHC Type-Level literals to allow for easy communication from type-level to value-level. (This may change to use DataKinds.)
-- Support for all OpenGL 4.0+ shader phases.
-- Arrays and array indexing (length is checked at compile-time (This might have to change.)).
-- vec swizzling and "vec concatenation".
-- For loops.
-
---
-
-<h4>Examples</h4>
-
-The following Haskell code:
+First we have to import some stuff.
 
 ```Haskell
-import Language.GLSL.Monad
-import qualified Graphics.Rendering.OpenGL as GL
-import Data.Vec ((:.)(..), Vec3)
+import Data.Vec ((:.)(..), Vec2, Vec3, Vec4)
 
-data Object = Object {
-    objectVertices :: [Vec3 GL.GLfloat]
-    }
+import qualified Data.Vector.Storable as V
 
-main :: IO ()
-main = print $ generateGLSL vertexShader
+import Andromeda.Simple.Expr
+import Andromeda.Simple.Type
+import Andromeda.Simple.GLSL
+import Andromeda.Simple.Var
+import Andromeda.Simple.StdLib
 
-vertexShader :: ShaderM GL.VertexShader Object
-vertexShader = do
-    -- Use GLSL version 430 core.
-    version "430 core"
-
-    -- Declare an "in" GLSL variable corresponding to
-    -- vertex position.
-    position <- inn vec3 ("position", objectVertices)
-
-    -- Set gl_Position to the given position.
-    glPosition #= position +.+ fltd 1.0
+import Andromeda.Simple.Render.Mesh
+import Andromeda.Simple.Render.VertexBuffer
+import Andromeda.Simple.Render.Compile
 ```
 
-generates the following GLSL shader code:
-
-```GLSL
-#version 430 core
-
-in vec3 position;
-
-void main()
-{
-    gl_Position = vec4(position, 1.0);
-}
-```
-
-And this fragment shader:
+Then we define our triangle data.
 
 ```Haskell
-fragmentShader :: ShaderM GL.VertexShader Object
-fragmentShader = do
-    version "430 core"
+triangle :: [Vec3 Float]
+triangle = [(-1):.(-1):.0:.(),
+              1 :.(-1):.0:.(),
+              0 :.  1 :.0:.()]
 
-    -- Declare out vec4 color.
-    color <- out vec4 "color"
-
-    -- Swizzling example.
-    color .@ X .& Y .& Z #= fltd 1 +.+ fltd 0 +.+ fltd 0
-    color .@ W #= fltd 1
+myMesh :: Mesh
+myMesh = Mesh [("vertex", MeshAttribute $ V.fromList triangle)] Triangles
 ```
 
-generates:
-
-```GLSL
-#version 430 core
-
-out vec4 color;
-
-void main()
-{
-    color.xyz = vec3(1, 0, 0);
-    color.w = 1;
-}
-```
-
-These two shaders can be combined to form a complete shader program:
+Now we actually define the shaders. We'll start by defining what we want `gl_Position` to be.
 
 ```Haskell
-shaderProgram :: IO (ShaderProgram Object)
-shaderProgram =
-    let shaderSequence = vertexShader -&> lastly fragentShader
-    in createProgram shaderSequence exampleObject
+glPosition :: Expr (Vec4 Float)
+glPosition = fetch "vertex" (Vec3T SFloat) +-+ 1
 ```
 
-Shader programs can be run very simply:
+gl_Position is a vec4 made from the vec3 "vertex" attribute we defined in the mesh and with a w value of 1. This is the same as `vec4(vertex, 1)` in GLSL.
+
+Shaders are represented as a series of `Statement`s. In this case, out vertex shader is just setting `gl_Position`.
 
 ```Haskell
-exampleObject = Object vertexPosition
+vertShader :: Statement
+vertShader = AssignS "gl_Position" glPosition
+```
 
-vertexPosition :: [Vec3 GL.GLfloat]
-vertexPosition =
-    [(-1) :. (-1) :. 0 :. (),
-        1 :. (-1) :. 0 :. (),
-        0 :.  1   :. 0 :. ()]
+For the frag shader, we just want to define a constant `out` value for the color, which will always be red.
 
+```Haskell
+outColor :: Expr (Vec3 Float)
+outColor = flt 1 +-+ flt 0 +-+ flt 0
 
+fragShader :: Statement
+fragShader = OutS "color" outColor
+```
 
+And that's it! All we have to do now is use our shaders.
+
+```Haskell
 main :: IO ()
 main = do
-    -- Open a window and initialize OpenGL.
-    window <- openWindow
-    initGL window
+    win <- openWindow
+    initGL win
 
-    program <- shaderProgram
+    prog <- addMesh myMesh =<< compile vertShader fragShader
 
-    -- A "ShaderGalaxy" is all the information needed to
-    -- draw a shader.
-    let shaderGalaxy = PureGalaxy prog id exampleObject
-
-    -- Enter main draw/update loop.
-    mainLoop window $ [shaderGalaxy] -|> []
+    mainLoop win prog
 ```
 
-This will draw a red triangle on the screen.
-
---
-
-TODO: more examples.
-
---
+Run this program (found in `test/Main.hs`), and you should see a red triangle!
 
 <h4>LICENSE</h4>
 All source code in this repository is provided under the WTFPL Version 2.
