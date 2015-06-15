@@ -21,12 +21,14 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:
---    Andromeda.New.Expr,
+    Andromeda.Simple.Expr, Andromeda.Simple.GLSL, Andromeda.Simple.Type,
+    Andromeda.Simple.Util, Andromeda.Simple.Var, Andromeda.Simple.Render.Mesh,
+    Andromeda.Simple.Render.Compile, Andromeda.Simple.Render.VertexBuffer,
 
     Andromeda.Lambda.Utils, Andromeda.Lambda.NatR, Andromeda.Lambda.GLSL,
     Andromeda.Lambda.StdLib, Andromeda.Lambda.Glom, Andromeda.Lambda.Expr,
-    Andromeda.Lambda.Shader, Andromeda.Lambda.Type, Andromeda.Lambda.Statement,
-    Andromeda.Lambda.HasAttr
+    Andromeda.Lambda.Shader, Andromeda.Lambda.Type,
+    Andromeda.Lambda.VertexBuffer, Andromeda.Lambda.GPU,
 
     Andromeda.Monad, Andromeda.Monad.Struct, Andromeda.Monad.GLSL,
     Andromeda.Monad.StdLib, Andromeda.Monad.ShaderType, Andromeda.Monad.GPU,
