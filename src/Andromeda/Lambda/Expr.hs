@@ -1,9 +1,8 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE LiberalTypeSynonyms #-}
+{-# LANGUAGE TypeFamilies #-}
 module Andromeda.Lambda.Expr where
 
 import GHC.Stack (errorWithStackTrace)
@@ -14,7 +13,8 @@ import Control.Arrow (second)
 
 import Andromeda.Lambda.Type
 import Andromeda.Lambda.Glom
-import Andromeda.Lambda.HasAttr
+import Andromeda.Lambda.VertexBuffer
+import Andromeda.Lambda.GPU
 
 -- | Lambda calculus with HOAS.
 data Expr a where
@@ -160,20 +160,20 @@ argsToStr =  intercalate ", " . map toGLSL
 --   be added for glsl operations with special syntax.
 data Lit a where
     Literal :: HasGLSL a => a -> Lit a
-    Native :: String -> Lit a
+    Native  :: String -> Lit a
 
-    BinOp :: String -> Lit a
-    UnOp :: String -> Lit a
+    BinOp   :: String -> Lit a
+    UnOp    :: String -> Lit a
 
     FieldAccess :: String -> Lit a
 
-    Pair :: Lit (a -> b -> (a, b))
+    Pair    :: Lit (a -> b -> (a, b))
 
-    LitIn   :: HasAttr a => [a] -> Type a -> String -> Lit a
-    LitUnif :: HasAttr a =>  a  -> Type a -> String -> Lit a
+    LitIn   :: HasVertex a => String -> Type a -> [a] -> Lit a
+    LitUnif :: HasVertex a => String -> Type a ->  a  -> Lit a
 
-lit :: HasGLSL a => a -> Expr a
-lit = Lit . Literal
+    Fetch   :: String -> Type a -> Lit a
+    Unif    :: String -> Type a -> Lit a
 
 instance Show (Lit a) where
     show (Literal l) = "Literal (" ++ toGLSL l ++ ")"
@@ -184,6 +184,8 @@ instance Show (Lit a) where
     show Pair = "Pair"
     show LitIn{} = "LitIn"
     show LitUnif{} = "LitUnif"
+    show (Fetch n _) = "Fetch " ++ show n
+    show (Unif  n _) = "Unif "  ++ show n
 
 instance HasGLSL (Lit a) where
     toGLSL (Literal a) = toGLSL a
@@ -194,6 +196,8 @@ instance HasGLSL (Lit a) where
     toGLSL Pair = errorWithStackTrace "toGLSL Pair"
     toGLSL LitIn{} = errorWithStackTrace "toGLSL LitIn"
     toGLSL LitUnif{} = errorWithStackTrace "toGLSL LitUnif"
+    toGLSL (Fetch n _) = n
+    toGLSL (Unif  n _) = n
 
 instance Eq (Lit a) where
     Literal     _ == Literal     _ = True
@@ -212,14 +216,12 @@ instance Eq (Lit a) where
 --   'Lam's, where possible. All Exprs should
 --   be beta-reduced before being used.
 betaReduce :: Expr a -> Expr a
-betaReduce (Lam f :$ x) =
-    betaReduce $ f (betaReduce x)
-betaReduce (f :$ x) =
-    betaReduce' $ betaReduce f :$ betaReduce x
+betaReduce (Lam f :$ x) = betaReduce $ f (betaReduce x)
+betaReduce (f :$ x)     = betaReduce' $ betaReduce f :$ betaReduce x
   where
     betaReduce' (Lam f' :$ x') = betaReduce $ f' (betaReduce x')
-    betaReduce' (f' :$ x') = betaReduce f' :$ betaReduce x'
-    betaReduce' x' = x'
+    betaReduce' (f'     :$ x') = betaReduce f' :$ betaReduce x'
+    betaReduce' x'             = x'
 betaReduce v@Var{} = v
 betaReduce l@Lit{} = l
 betaReduce l@Lam{} = l
@@ -228,5 +230,31 @@ betaReduce l@Lam{} = l
 -- Utils --
 -----------
 
+inn :: HasVertex a => String -> [a] -> Expr a
+inn name xs = Lit $ LitIn name guessTy xs
+
+uniform :: HasVertex a => String -> a -> Expr a
+uniform name x = Lit $ LitUnif name guessTy x
+
+lit :: HasGLSL a => a -> Expr a
+lit = Lit . Literal
+
+typeOfE :: HasType a => Expr a -> Type a
+typeOfE _ = typeOf undefined
+
 paren :: String -> String
 paren str = "(" ++ str ++ ")"
+
+------------------
+-- Experimental --
+------------------
+
+{-
+instance GPU (Expr Float) where
+    type CPU (Expr Float) = Float
+    toGPU = Lit . Literal
+
+instance VertexInput (Expr Float) where
+    bufferData [] = EmptyStream
+    bufferData xs = PrimitiveStream xs $ toGPU (head xs)
+-}

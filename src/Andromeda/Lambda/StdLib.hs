@@ -10,7 +10,6 @@ module Andromeda.Lambda.StdLib where
 
 import GHC.TypeLits
 import Data.Proxy (Proxy(..))
-import Data.Word (Word)
 
 import Data.Vec (Vec2, Vec3, Vec4)
 
@@ -21,8 +20,6 @@ import Andromeda.Lambda.GLSL
 
 type (&-) a b = (a, b)
 infixl &-
-
-
 
 ---------------------------------------
 -- Helpers to make Lam easier to use --
@@ -162,8 +159,8 @@ infixl 8 !
 -- Helpers
 
 type family If (condition :: Bool) (yes :: Nat) (no :: Nat) :: Nat where
-    If True  yes no = yes
-    If False yes no = no
+    If 'True  yes no = yes
+    If 'False yes no = no
 
 type Max a b = If (a <=? b) b a
 

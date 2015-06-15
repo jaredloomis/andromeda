@@ -2,16 +2,13 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 module Andromeda.Lambda.Type where
 
 import GHC.TypeLits
 import GHC.Stack (errorWithStackTrace)
-import Debug.Trace (trace)
 
 import Data.List (intercalate)
-import Data.Word (Word)
 import Data.Char (toLower)
 import Data.Vec ((:.)(..),Vec2,Vec3,Vec4)
 import qualified Data.Vec as Vec
@@ -22,7 +19,7 @@ import Andromeda.Lambda.NatR
 import Andromeda.Lambda.Utils
 
 -- | Type and term-level Haskell
---   representation of GLSL Types.
+--   representation of GLSL Types
 data Type a where
     VectT    :: (KnownNat n, KnownScalar a) =>
                  Vect n a -> Type (VecN n a)

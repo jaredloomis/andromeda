@@ -1,27 +1,13 @@
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FlexibleContexts #-}
 module Andromeda.Lambda.Shader where
 
 import GHC.Stack (errorWithStackTrace)
-import Foreign.Storable
-import Foreign.Marshal.Array (withArrayLen, withArray)
-import Foreign.Ptr (nullPtr)
 import Data.String (fromString)
 import Control.Monad.State
-import Debug.Trace (trace)
-import Unsafe.Coerce (unsafeCoerce)
 import System.Exit (exitFailure)
 import Data.Functor.Identity (runIdentity)
-
-import Data.Vec ((:.)(..), Vec4, Vec3)
+import Data.Monoid ((<>))
 
 import qualified Graphics.Rendering.OpenGL.GL as GL
 import qualified Graphics.UI.GLFW as GLFW
@@ -29,18 +15,14 @@ import qualified Graphics.UI.GLFW as GLFW
 import Andromeda.Lambda.Expr
 import Andromeda.Lambda.Type
 import Andromeda.Lambda.Glom
-import Andromeda.Lambda.GLSL
-import Andromeda.Lambda.HasAttr
-
--- Idea
---data Statement' where
---    Assign :: Pat a -> Expr (i -> a) -> Input i -> Statement'
+import Andromeda.Lambda.VertexBuffer
 
 ---------------------
 -- Running program --
 ---------------------
 
-mainLoop :: HasAttr i =>
+{-
+mainLoop :: HasVertex i =>
     GLFW.Window -> Program g i ->
     g -> (g -> g) -> IO ()
 mainLoop win prog g update = do
@@ -56,134 +38,110 @@ mainLoop win prog g update = do
         GLFW.swapBuffers win
         GLFW.pollEvents
 
-drawProgram :: HasAttr i => Program g i -> g -> IO (Program g i)
+drawProgram :: HasVertex i => Program g i -> g -> IO (Program g i)
 drawProgram (Program prog len attr update) g = do
     GL.currentProgram GL.$= Just prog
 
     let input = update g
     attr' <- replaceAttr input attr
-    bindAttr attr'
+    bindVertex attr'
 
     GL.drawArrays GL.Triangles 0 $ fromIntegral len
     GL.bindBuffer GL.ArrayBuffer GL.$= Nothing
     GL.currentProgram GL.$= Nothing
 
     return $ Program prog len attr update
+-}
+
+mainLoop :: GLFW.Window -> Program -> IO ()
+mainLoop win prog = do
+    prog' <- drawProgram prog
+    nextFrame win $ mainLoop win prog'
+
+nextFrame :: GLFW.Window -> IO () -> IO ()
+nextFrame win action = do
+    endFrame
+    shouldClose <- GLFW.windowShouldClose win
+    unless shouldClose action
+  where
+    endFrame = do
+        GLFW.swapBuffers win
+        GLFW.pollEvents
+
+drawProgram :: Program -> IO Program
+drawProgram prog = do
+    GL.clear [GL.ColorBuffer, GL.DepthBuffer]
+    drawProgram' prog
+
+drawProgram' :: Program -> IO Program
+drawProgram' (Program prog len attrs) = do
+    GL.currentProgram GL.$= Just prog
+    mapM_ bindVertex' attrs
+
+    GL.drawArrays GL.Triangles 0 $ fromIntegral len
+    GL.bindBuffer GL.ArrayBuffer GL.$= Nothing
+    GL.currentProgram GL.$= Nothing
+
+    return $ Program prog len attrs
 
 ------------------------
 -- Compile to program --
 ------------------------
 
-data Program g i =
-    Program
-        GL.Program
-        Int
-        (Attr i)
-        (g -> Input i)
+data Program = Program GL.Program Int [VertexBuffer]
 
-inputPat  :: String
-inputPat  = "andromeda_input"
-interPat  :: String
-interPat  = "andromeda_inter"
-outputPat :: String
-outputPat = "andromeda_output"
+data Statement where
+    AssignS :: HasType a => String -> Expr a -> Statement
+    OutS    :: HasType a => String -> Expr a -> Statement
+    ThenS   :: Statement -> Statement -> Statement
 
-version :: String
-version = "#version 330 core\n"
+data ShaderSource = ShaderSource {
+    shaderSrcTopLevelDecls :: String,
+    shaderSrcMain          :: String
+    } deriving (Show, Eq)
 
-inputLen :: Input a -> Int
-inputLen (InInput xs) = length xs
-inputLen (UniformInput _) = 1
-inputLen (LamI a b) = max (inputLen a) (inputLen b)
-inputLen (PairI a b) = max (inputLen a) (inputLen b)
+instance Monoid ShaderSource where
+    mempty = ShaderSource "" ""
+    mappend (ShaderSource ad am) (ShaderSource bd bm) =
+        ShaderSource (ad ++ bd) (am ++ bm)
 
-type family Last a where
-    Last (a -> b) = Last b
-    Last  a       = a
-type family Init a where
-    Init (a -> b) = a
+instance HasGLSL ShaderSource where
+    toGLSL (ShaderSource declSrc mainSrc) =
+        declSrc ++ "\nvoid main() {\n" ++ mainSrc ++ "\n}"
 
-{-
-comp :: forall i m o g last init.
-    (HasAttr i, HasType o, HasType m, HasGLSL m,
-     Last i ~ last, Init i ~ init) =>
-    Expr (i -> (Vec4 Float, m)) -> Expr (m -> o) ->
-    Input i -> (g -> Input i) ->
-    IO (Program g i)
-comp vert frag input update = undefined
--}
-
-compile :: forall i m o g. (HasAttr i, HasType o, HasType m, HasGLSL m) =>
-    Expr (i -> (Vec4 Float, m)) -> Expr (m -> o) ->
-    Input i -> (g -> Input i) ->
-    IO (Program g i)
-compile vert frag input update =
-    let len = inputLen input
-        inPat = pat inputPat :: Pat i
-        quals = qualifiers input
-        vStr  = compileVert vert quals
-        fStr  = compileFrag frag
+compile :: Statement -> Statement -> IO Program
+compile vert frag =
+    let (vSrc, vi) = compileStatement vert
+        vStr'      = "#version 330 core\n" ++ toGLSL vSrc
+        (fSrc, fi) = compileStatement frag
+        fStr'      = "#version 330 core\n" ++ toGLSL fSrc
+        input      = vi ++ fi
     in do
-        prog <- compileAndLink vStr fStr
-        attr <- toAttr input inPat prog
-        return $ Program prog len attr update
+        prog <- compileAndLink vStr' fStr'
+        attr <- mapM (`toVertex'` prog) input
+        return $ Program prog (inLen input) attr
+  where
+    inLen (InIn xs _ _ :  _) = length xs
+    inLen (_           : xs) = inLen xs
+    inLen []                 = 0
 
-data Quals = BaseQ Qualifier | PairQ Quals Quals
+compileStatement :: Statement -> (ShaderSource, [Input'])
+compileStatement (AssignS name expr)  = compileToGLSL (pat name) expr
+compileStatement (OutS name expr) =
+    let ty   = typeOfE expr
+        decl = "out " ++ toGLSL ty ++ " " ++ name ++ ";\n"
+        (ShaderSource decl' mainSrc, input) = compileToGLSL (pat name) expr
+    in (ShaderSource (decl <> decl') mainSrc, input)
+compileStatement (ThenS a b) =
+    let (as, ai) = compileStatement a
+        (bs, bi) = compileStatement b
+    in (as <> bs, ai ++ bi)
 
-qualifiers :: Input i -> Quals
-qualifiers (InInput _) = BaseQ In
-qualifiers (UniformInput _) = BaseQ Uniform
-qualifiers (LamI l r) = PairQ (qualifiers l) (qualifiers r)
-qualifiers (PairI l r) = PairQ (qualifiers l) (qualifiers r)
-
-compileVert :: forall i o. (HasType i, HasType o, HasGLSL o) =>
-    Expr (i -> (Vec4 Float, o)) -> Quals -> String
-compileVert expr quals =
-    let inPat   = pat inputPat :: Pat i
-        outPat  = pat interPat :: Pat o
-        inDefV  = defineTopQ quals inPat
-        outDefV = defineTop Out outPat
-        apExprV = expr :$ Var (V inputPat $ typeOf (undefined :: i))
-        (exprVA, exprVB) = unPair apExprV
-        vertStm = (outPat =: exprVB) >> (pat "gl_Position" =: exprVA)
-        mainV   = Definition Nothing "main" vertStm
-        vStr    = version ++ inDefV ++ outDefV ++ toGLSL mainV
-    in trace vStr vStr
-
-compileFrag :: forall i o. (HasType i, HasType o) =>
-    Expr (i -> o) -> String
-compileFrag expr =
-    let inPat   =  pat interPat :: Pat i
-        outPat  =  pat outputPat :: Pat o
-        inDefF  = defineTop In inPat
-        outDefF = defineTop Out outPat
-        apExprF = expr :$ Var (V interPat $ typeOf (undefined :: i))
-        mainF   = Definition Nothing "main" (outPat =: apExprF)
-        fStr    = version ++ inDefF ++ outDefF ++ toGLSL mainF
-    in trace fStr fStr
-
-defineTop :: Qualifier -> Pat a -> String
-defineTop q (l `PairG` r) = defineTop q l ++ defineTop q r
-defineTop q (BaseG (V n t)) = toGLSL q++" "++toGLSL t++" "++n++";\n"
-defineTop _ UnitG = ""
-
-defineTopQ :: Quals -> Pat i -> String
-defineTopQ (lq `PairQ` rq) (l `PairG` r) = defineTopQ lq l ++ defineTopQ rq r
-defineTopQ (BaseQ q) (BaseG (V n t)) = toGLSL q++" "++toGLSL t++" "++n++";\n"
-defineTopQ _ UnitG = ""
-defineTopQ _ _ = errorWithStackTrace "defineTopQ: Quals do not match Pat."
-
----------
-
---compile' :: Expr a -> Expr b -> IO (Program)
---compile' vert frag =
-
-compileToGLSL :: Pat a -> Expr a -> String
+compileToGLSL :: Pat a -> Expr a -> (ShaderSource, [Input'])
 compileToGLSL outPat expr =
     let (expr', input) = runIdentity $ runStateT (collectInput expr) []
         declIn = concatMap declareInput input
-    in "#version 330 core\n" ++ declIn ++
-       "void main() {\n" ++ mainAction outPat expr' ++ "\n}"
+    in (ShaderSource declIn $ mainAction outPat expr', input)
 
 mainAction :: Pat a -> Expr a -> String
 mainAction UnitG _ = ""
@@ -200,10 +158,10 @@ declareInput (InUnif _ ty n) =
     "uniform " ++ toGLSL ty ++ " " ++ n ++ ";\n"
 
 collectInput :: Expr a -> State [Input'] (Expr a)
-collectInput (Lit (LitIn xs ty n)) = do
+collectInput (Lit (LitIn n ty xs)) = do
     tellInput $ InIn xs ty n
     return $ Var (V n ty)
-collectInput (Lit (LitUnif x ty n)) = do
+collectInput (Lit (LitUnif n ty x)) = do
     tellInput $ InUnif x ty n
     return $ Var (V n ty)
 collectInput (f :$ x) =
@@ -227,7 +185,7 @@ tellInput i@(InUnif _ _ n) = do
     isDuplicate (InUnif _ _ n') = n == n'
 
 ----------------------------------------------------
--- Functions to compile shaders to a 'GL.Program' --
+-- Functions to compile shaders to a 'GL.Program --
 ----------------------------------------------------
 
 compileAndLink :: String -> String -> IO GL.Program
@@ -324,3 +282,24 @@ resizeScene _ width height =
     -- Make viewport the same size as the window.
     GL.viewport GL.$= (GL.Position 0 0,
                     GL.Size (fromIntegral width) (fromIntegral height))
+
+------------
+-- unPair --
+------------
+
+unPair :: forall a b. (HasType a, HasType b) =>
+    Expr (a, b) -> (Expr a, Expr b)
+unPair = unPair' . betaReduce
+
+unPair' :: forall a b. (HasType a, HasType b) =>
+    Expr (a, b) -> (Expr a, Expr b)
+unPair' (Lit Pair :$ a :$ b) = (a, b)
+unPair' (Var (V name _)) =
+    case pat name :: Pat (a, b) of
+        PairG (BaseG varA) (BaseG varB) ->
+            (Var varA, Var varB)
+        _ -> errorWithStackTrace
+            "unPair': 'pat' returned an unexpected format."
+unPair' expr = errorWithStackTrace $
+    "unPair: Pair was made through some " ++
+    "unknown operation:\n" ++ show expr
