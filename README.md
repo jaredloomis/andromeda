@@ -1,10 +1,3 @@
-This repository contains 3 APIs:
-- A  new lambda calculus-based eDSL ("Simple")
-- An old lambda calculus-based eDSL ("Lambda")
-- A  Monad-based, imperative eDSL
-
-The rest of this README will only talk about the newest "Simple" version.
-
 Example
 --
 
@@ -80,3 +73,13 @@ main = do
 ```
 
 Run this program (found in `test/Main.hs`), and you should see a red triangle!
+
+Note
+--
+
+This repository contains 3 APIs:
+- A  new lambda calculus-based eDSL ("Simple")
+- An old lambda calculus-based eDSL ("Lambda")
+- A  Monad-based, imperative eDSL   ("Monad")
+
+The above example uses the "Simple" API. I'm not working any more on the other versions, but they may be interesting or of some use, especially the imperative one.
