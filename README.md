@@ -1,10 +1,9 @@
 This repository contains 3 APIs:
-    - A  new lambda calculus-based eDSL ("Simple")
-    - An old lambda calculus-based eDSL ("Lambda")
-    - A  Monad-based, imperative eDSL
+- A  new lambda calculus-based eDSL ("Simple")
+- An old lambda calculus-based eDSL ("Lambda")
+- A  Monad-based, imperative eDSL
 
-Functional version
-==================
+The rest of this README will only talk about the newest "Simple" version.
 
 As an example of what the library can do, we will make a simple application that renders a red triangle to the screen.
 
