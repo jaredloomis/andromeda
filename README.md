@@ -5,6 +5,9 @@ This repository contains 3 APIs:
 
 The rest of this README will only talk about the newest "Simple" version.
 
+Example
+--
+
 As an example of what the library can do, we will make a simple application that renders a red triangle to the screen.
 
 First we have to import some stuff.
