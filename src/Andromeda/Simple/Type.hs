@@ -5,7 +5,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 module Andromeda.Simple.Type where
 
-import Data.Vec ((:.)(..), Vec2, Vec3, Vec4)
+import Data.Vec (Vec2, Vec3, Vec4)
 
 import qualified Graphics.Rendering.OpenGL.GL as GL
 

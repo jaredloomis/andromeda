@@ -1,10 +1,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 module Andromeda.Simple.GLSL where
 
-import Data.Word (Word)
-
-import Data.Vec ((:.)(..), Vec2,  Vec3,  Vec4,
-                           Mat22, Mat33, Mat44)
+import Data.Vec ((:.)(..), Vec2,  Vec3,  Vec4)
 
 import Andromeda.Simple.Util
 
