@@ -8,36 +8,65 @@
 module Main where
 
 import Data.Vec ((:.)(..), Vec2, Vec3, Vec4)
---import qualified Data.Vec as V
 
-import qualified Graphics.Rendering.OpenGL as GL
+import qualified Data.Vector.Storable as V
 
+{-
 import Andromeda.Lambda.Expr
 import Andromeda.Lambda.Type
 import Andromeda.Lambda.StdLib
 import Andromeda.Lambda.Shader
 import Andromeda.Lambda.Utils
-import Andromeda.Lambda.GLSL
-import Andromeda.Lambda.HasAttr
-import Andromeda.Lambda.NatR
+import Andromeda.Lambda.VertexBuffer
+-}
+
+import Andromeda.Simple.Expr
+import Andromeda.Simple.Type
+import Andromeda.Simple.GLSL
+import Andromeda.Simple.Var
+
+import Andromeda.Simple.Render.Mesh
+import Andromeda.Simple.Render.VertexBuffer
+import Andromeda.Simple.Render.Compile
 
 main :: IO ()
 main = do
     win <- openWindow
     initGL win
+
+    prog <- addMesh myMesh =<< compile simpleV simpleF
+
+    mainLoop win prog
+
+simpleV :: Statement
+simpleV =
+    let expr =
+            (Lit (Native "vec4") :: Expr (Vec3 Float -> Float -> Vec4 Float))
+            :$ Lit (Fetch "vertex" (Vec3T SFloat)) :$ 1
+    in AssignS "gl_Position" expr
+
+simpleF :: Statement
+simpleF = OutS "color" (Lit (Native "vec3(1,0,0)") :: Expr (Vec3 Float))
+
+myMesh :: Mesh
+myMesh = Mesh [("vertex", MeshAttribute $ V.fromList triangle)] Triangles
+
+triangle :: [Vec3 Float]
+triangle = [(-1):.(-1):.0:.(),
+              1 :.(-1):.0:.(),
+              0 :.  1 :.0:.()]
+
 {-
-    prog <- compile minV minF
-        (InInput triangle)
-        (const $ InInput triangle)
-    mainLoop win prog () id
--}
-    prog <- compile simpleV simpleF
-        (UniformInput 0 `PairI` InInput triangle)
-        updateTime
+main :: IO ()
+main = do
+    win <- openWindow
+    initGL win
 
-    GL.get GL.errors >>= print
+    prog <- compile
+        (AssignS "gl_Position" simpleV)
+        (OutS    "outColor"    simpleF)
 
-    mainLoop win prog (0::Float) (+0.01)
+    mainLoop win prog
 
 updateTime :: Float -> Input (Float, Vec3 Float)
 updateTime i = UniformInput i `PairI` InInput triangle
@@ -62,42 +91,9 @@ pixelF = lam $ \renderedTexture textureCoord ->
                     :: Expr (Vec4 Float)
     in pair tex 10
 
-newV :: Expr (Vec4 Float, Int)
-newV =
-    let renderedTexture = Lit $ LitUnif (Sampler (TS $ TS TZ) undefined) guessTy "renderedTexture"
-        textureCoord    = Lit $ LitIn   [0,1,2] guessTy "textureCoord" :: Expr (Vec2 Float)
-        (w, h)  = (flt 800, flt 600)
-        (pw,ph) = (flt  10, flt  10)
-        dx      = pw * (1 / w)
-        dy      = ph * (1 / h)
-        cx      = dx * (floorG (textureCoord ! X) / dx)
-        cy      = dy * (floorG (textureCoord ! Y) / dy)
-        tex     = texture renderedTexture (cx +-+ cy)
-                    :: Expr (Vec4 Float)
-    in pair tex 10
+simpleV :: Expr (Vec4 Float)
+simpleV = inn "vertex" triangle +-+ 1
 
-vertexShader :: Expr (Vec3 Float -> Vec4 Float)
-vertexShader = Lam (+-+ (1 :: Expr Float))
-
-fragmentShader :: Expr (Vec4 Float)
-fragmentShader = 1 +-+ flt 0 +-+ flt 0 +-+ flt 1
-
-minV :: Expr (Vec3 Float -> (Vec4 Float, ()))
-minV = Lam $ \pos ->
-    pair (pos +-+ 1.0) bottom
-
-minF :: Expr (() -> Vec3 Float)
-minF = Lam $ \_ -> flt 1.0 +-+ flt 0.0 +-+ 0.0
-
-
-simpleV :: Expr ((Float, Vec3 Float) -> (Vec4 Float, Float))
-simpleV = Lam $ \p ->
-    let (offs, expr) = unPair p
-    in pair (expr +-+ 1.0) offs
---        xyzE = (expr ! X & Y) +-+ (-offs)
---        mat  = lit . Mat4 $ V.perspective 0.1 100 45 (800/600)
---    in pair :$ (mat #* (xyzE +-+ 1.0)) :$ offs
-
-simpleF :: Expr (Float -> Vec3 Float)
-simpleF = Lam $ \x -> (1 :: Expr Float) +-+ (0 :: Expr Float) +-+ 0
---    sin x +-+ cos x +-+ (cos . sin) x
+simpleF :: Expr (Vec3 Float)
+simpleF = flt 1 +-+ flt 0 +-+ flt 0
+-}
