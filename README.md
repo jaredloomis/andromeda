@@ -1,3 +1,16 @@
+Andromeda
+==
+
+This is a library that allows you to write and run GLSL shaders in Haskell.
+
+Why would you want to write shaders in Haskell? Well with this eDSL instead of loading shaders, then creating and filling buffers with data, then binding each buffer, getting uniform locations and setting, etc., you just specify the data and how you want to transform and render the data.
+
+More advantages of writing shaders in Haskell:
+- Everything is typechecked at compile time (by GHC).
+- Some of the distinction between GPU and CPU values / operations is removed.
+- You can use normal Haskell functions when writing shaders.
+- Optimizations can be performed on the shader.
+
 Example
 --
 
@@ -40,7 +53,7 @@ glPosition :: Expr (Vec4 Float)
 glPosition = fetch "vertex" (Vec3T SFloat) +-+ 1
 ```
 
-gl_Position is a vec4 made from the vec3 "vertex" attribute we defined in the mesh and with a w value of 1. This is the same as `vec4(vertex, 1)` in GLSL.
+`gl_Position` is a vec4 made from the vec3 "vertex" attribute we defined in the mesh and with a w value of 1. This is the same as `vec4(vertex, 1)` in GLSL.
 
 Shaders are represented as a series of `Statement`s. In this case, out vertex shader is just setting `gl_Position`.
 
