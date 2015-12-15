@@ -16,9 +16,6 @@ import Andromeda.Simple.Expr
 import Andromeda.Simple.Type
 import Andromeda.Simple.Util
 
---type (&-) a b = (a, b)
---infixl &-
-
 ---------------------------------------
 -- Helpers to make Lam easier to use --
 ---------------------------------------

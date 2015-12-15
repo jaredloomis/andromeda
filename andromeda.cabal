@@ -8,7 +8,7 @@ description:
     Lambda Calculus, and another with a Monadic,
     imperative style.
 
-license:      WTFPL
+license:      PublicDomain
 license-file: LICENSE
 
 author:     Jared Loomis
@@ -19,20 +19,31 @@ build-type:          Simple
 extra-source-files:  README.md
 cabal-version:       >=1.10
 
+executable test
+  hs-source-dirs:      test
+  main-is:             Main.hs
+
+  build-depends:
+    base,
+    vector, Vec,
+    OpenGL, GLFW-b,
+    andromeda
+
 library
   exposed-modules:
     Andromeda.Simple.Expr, Andromeda.Simple.GLSL, Andromeda.Simple.Type,
     Andromeda.Simple.Util, Andromeda.Simple.Var, Andromeda.Simple.Render.Mesh,
     Andromeda.Simple.Render.Compile, Andromeda.Simple.Render.VertexBuffer,
+    Andromeda.Simple.StdLib
 
-    Andromeda.Lambda.Utils, Andromeda.Lambda.NatR, Andromeda.Lambda.GLSL,
-    Andromeda.Lambda.StdLib, Andromeda.Lambda.Glom, Andromeda.Lambda.Expr,
-    Andromeda.Lambda.Shader, Andromeda.Lambda.Type,
-    Andromeda.Lambda.VertexBuffer, Andromeda.Lambda.GPU,
+--    Andromeda.Lambda.Utils, Andromeda.Lambda.NatR, Andromeda.Lambda.GLSL,
+--    Andromeda.Lambda.StdLib, Andromeda.Lambda.Glom, Andromeda.Lambda.Expr,
+--    Andromeda.Lambda.Shader, Andromeda.Lambda.Type,
+--    Andromeda.Lambda.VertexBuffer, Andromeda.Lambda.GPU,
 
-    Andromeda.Monad, Andromeda.Monad.Struct, Andromeda.Monad.GLSL,
-    Andromeda.Monad.StdLib, Andromeda.Monad.ShaderType, Andromeda.Monad.GPU,
-    Andromeda.Monad.Vec, Andromeda.Monad.Type, Andromeda.Monad.Primitive
+--    Andromeda.Monad, Andromeda.Monad.Struct, Andromeda.Monad.GLSL,
+--    Andromeda.Monad.StdLib, Andromeda.Monad.ShaderType, Andromeda.Monad.GPU,
+--    Andromeda.Monad.Vec, Andromeda.Monad.Type, Andromeda.Monad.Primitive
   
   -- Modules included in this library but not exported.
   -- other-modules:       

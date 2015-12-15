@@ -46,8 +46,8 @@ instance GLSL (Expr a) where
             ExprN (Var (V n _)) -> n ++ paren argsStr
             ExprN (Lam _) -> --toGLSL (betaReduce app)
                 error $
-                "toGLSL Expr: recieved Lam. Expr must be" ++
-                " beta reduced. Use 'betaReduce'."
+                    "toGLSL Expr: recieved Lam. Expr must be" ++
+                    " beta reduced. Use 'betaReduce'."
             ExprN (_:$_) -> error
                 "toGLSL Expr: matched on an impossible case."
       where
@@ -142,45 +142,42 @@ instance (Floating a, GLSL a) => Floating (Expr a) where
 -- | A GLSL Literal. More constructors should only
 --   be added for glsl operations with special syntax.
 data Lit a where
-    Literal :: GLSL a => a -> Lit a
-    Native  :: String -> Lit a
+    Literal     :: GLSL a => a -> Lit a
+    Native      :: String -> Lit a
 
-    BinOp   :: String -> Lit a
-    UnOp    :: String -> Lit a
+    -- | Binary Operation ex. "x + y"
+    BinOp       :: String -> Lit a
+    -- | Unary Operation ex. "-x"
+    UnOp        :: String -> Lit a
 
+    -- | Field Access ex "vec.x"
     FieldAccess :: String -> Lit a
 
-    Pair    :: Lit (a -> b -> (a, b))
+    -- | Primitive pair psuedo-constructor
+    Pair        :: Lit (a -> b -> (a, b))
 
---    LitIn   :: HasVertex a => String -> Type a -> [a] -> Lit a
---    LitUnif :: HasVertex a => String -> Type a ->  a  -> Lit a
-
-    Fetch   :: String -> Type a -> Lit a
-    Unif    :: String -> Type a -> Lit a
+    Fetch       :: String -> Type a -> Lit a
+    Unif        :: String -> Type a -> Lit a
 
 instance Show (Lit a) where
-    show (Literal l) = "Literal (" ++ toGLSL l ++ ")"
-    show (Native  n) = "Native (" ++ n ++ ")"
-    show (BinOp b) = "BinOp (" ++ b ++ ")"
-    show (UnOp u) = "UnOp (" ++ u ++ ")"
+    show (Literal l)     = "Literal (" ++ toGLSL l ++ ")"
+    show (Native  n)     = "Native (" ++ n ++ ")"
+    show (BinOp b)       = "BinOp (" ++ b ++ ")"
+    show (UnOp u)        = "UnOp (" ++ u ++ ")"
     show (FieldAccess f) = "FieldAccess " ++ f
-    show Pair = "Pair"
---    show LitIn{} = "LitIn"
---    show LitUnif{} = "LitUnif"
-    show (Fetch n _) = "Fetch " ++ show n
-    show (Unif  n _) = "Unif "  ++ show n
+    show Pair            = "Pair"
+    show (Fetch n _)     = "Fetch " ++ show n
+    show (Unif  n _)     = "Unif "  ++ show n
 
 instance GLSL (Lit a) where
-    toGLSL (Literal a) = toGLSL a
-    toGLSL (Native s) = s
-    toGLSL (BinOp s) = s
-    toGLSL (UnOp s) = s
+    toGLSL (Literal a)     = toGLSL a
+    toGLSL (Native s)      = s
+    toGLSL (BinOp s)       = s
+    toGLSL (UnOp s)        = s
     toGLSL (FieldAccess f) = f
-    toGLSL Pair = error "toGLSL Pair"
---    toGLSL LitIn{} = error "toGLSL LitIn"
---    toGLSL LitUnif{} = error "toGLSL LitUnif"
-    toGLSL (Fetch n _) = n
-    toGLSL (Unif  n _) = n
+    toGLSL Pair            = error "toGLSL Pair"
+    toGLSL (Fetch n _)     = n
+    toGLSL (Unif  n _)     = n
 
 -------------
 -- Pattern --

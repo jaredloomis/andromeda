@@ -1,4 +1,7 @@
 *.swp
+*.swo
 *.o
 *.dyn*
 *.hi
+*.sock
+Main
