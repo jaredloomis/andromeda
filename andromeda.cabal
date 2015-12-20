@@ -19,14 +19,23 @@ build-type:          Simple
 extra-source-files:  README.md
 cabal-version:       >=1.10
 
-executable test
-  hs-source-dirs:      test
-  main-is:             Main.hs
+executable andromeda-example
+  hs-source-dirs: examples
+  main-is:        Main.hs
 
   build-depends:
     base,
     vector, Vec,
     OpenGL, GLFW-b,
+    andromeda
+
+test-suite andromeda-tests
+  type: exitcode-stdio-1.0
+  hs-source-dirs: tests
+  main-is:        Main.hs
+
+  build-depends:
+    base, QuickCheck,
     andromeda
 
 library

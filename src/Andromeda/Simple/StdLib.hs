@@ -11,6 +11,7 @@ module Andromeda.Simple.StdLib where
 import GHC.TypeLits
 import Data.Proxy
 import Data.Vec ((:.)(..), Vec2, Vec3, Vec4)
+import qualified Data.Vec as Vec
 
 import Andromeda.Simple.Expr
 import Andromeda.Simple.Type
@@ -113,15 +114,15 @@ instance VecLength Int   Int   1
 instance VecLength Bool  Bool  1
 instance VecLength Word  Word  1
 
-(+-+) :: forall a b c s n1 n2.
+(+:) :: forall a b c s n1 n2.
         (VecLength s a n1, VecLength s b n2,
          VecLength s c (n1+n2), KnownNat n1, KnownNat n2) =>
     Expr a -> Expr b -> Expr c
-(+-+) x y =
+(+:) x y =
     let len = natVal (Proxy :: Proxy n1) + natVal (Proxy :: Proxy n2)
         funcName = "vec" ++ show len
     in Lit (Native funcName) :$ x :$ y
-infixr 5 +-+
+infixr 5 +:
 
 -------------------
 -- Vec swizzling --
@@ -136,7 +137,7 @@ data Index (len :: Nat) (maxI :: Nat) where
               Index (len1 + len2) (Max max1 max2)
 
 (&) :: Index len1 max1 -> Index len2 max2 ->
-        Index (len1 + len2) (Max max1 max2)
+       Index (len1 + len2) (Max max1 max2)
 (&) = Linked
 
 instance Show (Index len s) where
@@ -163,20 +164,44 @@ type Max a b = If (a <=? b) b a
 -- Vec pattern matching --
 --------------------------
 
-unVec2 :: (VecLength a a 1) => Expr (Vec2 a) -> Vec2 (Expr a)
-unVec2 vec = (vec ! X) :. (vec ! Y) :. ()
+class DestrVec expr vec | expr -> vec, vec -> expr where
+    destr :: expr -> vec
+    pack  :: vec -> expr
 
-unVec3 :: (VecLength a a 1) => Expr (Vec3 a) -> Vec3 (Expr a)
-unVec3 vec = (vec ! X) :. (vec ! Y) :. (vec ! Z) :. ()
+instance (VecLength a a 1) =>
+         DestrVec (Expr (Vec2 a)) (Vec2 (Expr a)) where
+    destr vec = (vec ! X) :. (vec ! Y) :. ()
+    pack  (x:.y:.()) = x +: y
+instance (VecLength a a 1) =>
+         DestrVec (Expr (Vec3 a)) (Vec3 (Expr a)) where
+    destr vec = (vec ! X) :. (vec ! Y) :. (vec ! Z) :. ()
+    pack  (x:.y:.z:.()) = x +: y +: z
+instance (VecLength a a 1) =>
+         DestrVec (Expr (Vec4 a)) (Vec4 (Expr a)) where
+    destr vec = (vec ! X) :. (vec ! Y) :.
+                (vec ! Z) :. (vec ! W) :. ()
+    pack  (x:.y:.z:.w:.()) = x +: y +: z +: w
 
-unVec4 :: (VecLength a a 1) => Expr (Vec4 a) -> Vec4 (Expr a)
-unVec4 vec = (vec ! X) :. (vec ! Y) :. (vec ! Z) :. (vec ! W) :. ()
+--------------------------
+-- Higher order vec ops --
+--------------------------
+
+vmap :: (Vec.Map a b va vb, DestrVec c va, DestrVec d vb) =>
+    (a -> b) -> c -> d
+vmap f = pack . Vec.map f . destr
+
+vzipWith :: (Vec.ZipWith a b c va vb vc,
+         DestrVec ea va,
+         DestrVec eb vb,
+         DestrVec ec vc) =>
+    (a -> b -> c) -> ea -> eb -> ec
+vzipWith f x y = pack $ Vec.zipWith f (destr x) (destr y)
 
 ----------------
 -- Matrix ops --
 ----------------
 
-class MatrixMult a b c | a b -> c, c b -> a, c a -> b where
+class MatrixMult a b c | a b -> c, c b -> a, c a -> b
 
 instance MatrixMult (Matrix2 Float) (Vec2 Float) (Vec2 Float)
 instance MatrixMult (Matrix3 Float) (Vec3 Float) (Vec3 Float)
@@ -207,8 +232,14 @@ floorG x = Lit (Native "floor") :$ x
 fetch :: String -> Type a -> Expr a
 fetch attr ty = Lit $ Fetch attr ty
 
+fetch' :: Typed a => String -> Expr a
+fetch' attr   = Lit $ Fetch attr guessTy
+
 uniform :: String -> Type a -> Expr a
 uniform unif ty = Lit $ Unif unif ty
+
+uniform' :: Typed a => String -> Expr a
+uniform' unif   = Lit $ Unif unif guessTy
 
 pair :: (Typed a, Typed b) => Expr a -> Expr b -> Expr (a, b)
 pair x y = Lit Pair :$ x :$ y

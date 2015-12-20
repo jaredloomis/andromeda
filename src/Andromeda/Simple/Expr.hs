@@ -11,7 +11,7 @@ import Andromeda.Simple.Type
 import Andromeda.Simple.GLSL
 import Andromeda.Simple.Var
 
--- | Lambda calculus with HOAS.
+-- | Lambda calculus with HOAS
 data Expr a where
     Var  :: V a -> Expr a
     Lit  :: Lit a -> Expr a
@@ -64,7 +64,7 @@ instance GLSL (Expr a) where
 -- Helpers for GLSL Expr instance --
 ---------------------------------------
 
--- | Existential Expr.
+-- | Existential Expr
 data ExprN = forall a. ExprN (Expr a)
 instance GLSL ExprN where
     toGLSL (ExprN e) = toGLSL e
@@ -73,7 +73,7 @@ collectArgsR :: Expr a -> (ExprN, [ExprN])
 collectArgsR (xs :$ x) =
     let (f,as) = collectArgsR xs
     in (f, ExprN x : as)
-collectArgsR x = (ExprN x,[])
+collectArgsR x = (ExprN x, [])
 
 argList :: Expr a -> String
 argList = argsToStr . snd . collectArgs
@@ -140,7 +140,7 @@ instance (Floating a, GLSL a) => Floating (Expr a) where
 -------------
 
 -- | A GLSL Literal. More constructors should only
---   be added for glsl operations with special syntax.
+--   be added for glsl operations with special syntax
 data Lit a where
     Literal     :: GLSL a => a -> Lit a
     Native      :: String -> Lit a

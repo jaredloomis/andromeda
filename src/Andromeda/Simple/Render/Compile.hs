@@ -1,6 +1,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE FlexibleInstances #-}
 -- This needs a complete rewrite
 module Andromeda.Simple.Render.Compile where
 
@@ -25,6 +26,10 @@ import Andromeda.Simple.Var
 import Andromeda.Simple.Render.Mesh
 import Andromeda.Simple.Render.VertexBuffer
 
+--------------------------
+-- Statement Free Monad --
+--------------------------
+
 type Statement a = Free StatementF a
 
 data StatementF next where
@@ -35,6 +40,9 @@ instance Functor StatementF where
     fmap f (AssignF n e next) = AssignF n e $ f next
     fmap f (OutF    n e next) = OutF    n e $ f next
 
+instance GLSL (Statement ()) where
+    toGLSL = toGLSL . compileStatement
+
 (=:) :: Typed a => String -> Expr a -> Statement ()
 (=:) name expr = liftF $ AssignF name expr ()
 infixr 2 =:
@@ -42,6 +50,11 @@ infixr 2 =:
 out :: Typed a => String -> Expr a -> Statement ()
 out name expr = liftF $ OutF name expr ()
 
+--------------------
+-- Renderer Usage --
+--------------------
+
+-- | Everything OpenGL needs to render your stuff
 data Renderer = Renderer {
     glProgram       :: !GL.Program,
 
@@ -51,10 +64,6 @@ data Renderer = Renderer {
     rendererMeshes  :: [CompiledMesh],
     renderLen       :: !GL.GLint
     }
-
-----------------------
--- Running Renderer --
-----------------------
 
 mainLoop :: GLFW.Window -> Renderer -> IO ()
 mainLoop win renderer = do
@@ -98,7 +107,8 @@ bindMeshes renderer@(Renderer prog _ _ meshes _) =
     foldrM bindMesh renderer meshes
   where
     bindMesh :: CompiledMesh -> Renderer -> IO Renderer
-    bindMesh (CompiledMesh attrs unifs _) render'@(Renderer _ attrMap unifMap _ _) = do
+    bindMesh (CompiledMesh attrs unifs _)
+             render'@(Renderer _ attrMap unifMap _ _) = do
         attrMap' <- foldrM bindAttr attrMap attrs
         unifMap' <- foldrM bindUnif unifMap unifs
         return $ render' {
@@ -110,9 +120,10 @@ bindMeshes renderer@(Renderer prog _ _ meshes _) =
                 M.Map String GL.UniformLocation ->
                 IO (M.Map String GL.UniformLocation)
     bindUnif (attr, Uniform unif) unifMap = do
-        (changed, loc) <- maybe ((True,) <$> GL.get (GL.uniformLocation prog attr))
-                                (return . (False,))
-                                (M.lookup attr unifMap)
+        (changed, loc) <- maybe
+            ((True,) <$> GL.get (GL.uniformLocation prog attr))
+            (return . (False,))
+            (M.lookup attr unifMap)
         GL.uniform loc GL.$= unif
         return $ if changed then M.insert attr loc unifMap else unifMap
 
@@ -120,9 +131,10 @@ bindMeshes renderer@(Renderer prog _ _ meshes _) =
                 M.Map String GL.AttribLocation ->
                 IO (M.Map String GL.AttribLocation)
     bindAttr (attr, buf) attrMap = do
-        (changed, loc) <- maybe ((True,) <$> GL.get (GL.attribLocation prog attr))
-                                (return . (False,))
-                                (M.lookup attr attrMap)
+        (changed, loc) <- maybe
+            ((True,) <$> GL.get (GL.attribLocation prog attr))
+            (return . (False,))
+            (M.lookup attr attrMap)
         bindBuffer buf loc
         return $ if changed then M.insert attr loc attrMap else attrMap
 
@@ -155,6 +167,10 @@ instance GLSL ShaderSource where
     toGLSL (ShaderSource declSrc mainSrc) =
         declSrc ++ "\nvoid main() {\n" ++ mainSrc ++ "\n}"
 
+-------------------------
+-- Compiling Statement --
+-------------------------
+
 compile :: Statement () -> Statement () -> IO Renderer
 compile vert frag =
     let vStr = version ++ toGLSL (compileStatement vert)
@@ -165,24 +181,6 @@ compile vert frag =
   where
     version :: String
     version = "#version 330 core\n"
-
-{-
-compile :: Statement -> Statement -> IO Program
-compile vert frag =
-    let vSrc   = compileStatement' vert
-        vStr'  = "#version 330 core\n" ++ toGLSL vSrc
-        fSrc   = compileStatement' frag
-        fStr'  = "#version 330 core\n" ++ toGLSL fSrc
-        input  = vi ++ fi
-    in do
-        prog <- compileAndLink vStr' fStr'
-        attr <- mapM (`toVertex'` prog) input
-        return $ Program prog (inLen input) attr
-  where
-    inLen (InIn xs _ _ :  _) = length xs
-    inLen (_           : xs) = inLen xs
-    inLen []                 = 0
--}
 
 compileStatement :: Statement () -> ShaderSource
 compileStatement =
@@ -196,10 +194,6 @@ compileStatement' (OutF name expr ()) = do
         decl = "out " ++ toGLSL ty ++ " " ++ name ++ ";\n"
     ShaderSource decl' mainSrc <- compileToGLSL name expr
     return $ ShaderSource (decl <> decl') mainSrc
-{-
-compileStatement' (ThenS a b) =
-    (<>) <$> compileStatement' a <*> compileStatement' b
--}
 
 statementToList :: Statement () -> [StatementF ()]
 statementToList (Free (AssignF name expr next)) =
@@ -207,6 +201,10 @@ statementToList (Free (AssignF name expr next)) =
 statementToList (Free (OutF name expr next)) =
     OutF name expr () : statementToList next
 statementToList (Pure ()) = []
+
+--------------------
+-- Compiling Expr --
+--------------------
 
 compileToGLSL :: String -> Expr a -> State [String] ShaderSource
 compileToGLSL outName expr = do
@@ -241,35 +239,6 @@ declareInput (Lit (Unif n ty)) = do
 declareInput (f :$ x) =
     (++) <$> declareInput f <*> declareInput x
 declareInput _        = return ""
-
-{-
-collectInput :: Expr a -> State [Input'] (Expr a)
-collectInput (Lit (LitIn n ty xs)) = do
-    tellInput $ InIn xs ty n
-    return $ Var (V n ty)
-collectInput (Lit (LitUnif n ty x)) = do
-    tellInput $ InUnif x ty n
-    return $ Var (V n ty)
-collectInput (f :$ x) =
-    (:$) <$> collectInput f <*> collectInput x
-collectInput expr = return expr
-
-tellInput :: Input' -> State [Input'] ()
-tellInput i@(InIn _ _ n) = do
-    xs <- get
-    unless (any isDuplicate xs) $
-        modify (++[i])
-  where
-    isDuplicate (InIn   _ _ n') = n == n'
-    isDuplicate (InUnif _ _ n') = n == n'
-tellInput i@(InUnif _ _ n) = do
-    xs <- get
-    unless (any isDuplicate xs) $
-        modify (++[i])
-  where
-    isDuplicate (InIn   _ _ n') = n == n'
-    isDuplicate (InUnif _ _ n') = n == n'
--}
 
 ----------------------------------------------------
 -- Functions to compile shaders to a 'GL.Program --

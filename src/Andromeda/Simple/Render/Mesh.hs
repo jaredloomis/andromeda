@@ -29,10 +29,9 @@ data Uniform where
                a -> Uniform
 
 compileMesh :: Mesh -> IO CompiledMesh
-compileMesh (Mesh attrs prim) =
-    CompiledMesh <$>         compileAttrs attrs
-                 <*> return (compileUnifs attrs)
-                 <*> return prim
+compileMesh (Mesh attrs prim) = do
+    bufs <- compileAttrs attrs
+    return $ CompiledMesh bufs (compileUnifs attrs) prim
   where
     compileAttrs ((name, attr@MeshAttribute{}) : xs) = do
         attr' <- (name,) <$> toBuffer attr
