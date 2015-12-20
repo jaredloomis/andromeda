@@ -150,13 +150,15 @@ data Lit a where
     -- | Unary Operation ex. "-x"
     UnOp        :: String -> Lit a
 
-    -- | Field Access ex "vec.x"
+    -- | Field Access ex. "vec.x"
     FieldAccess :: String -> Lit a
 
     -- | Primitive pair psuedo-constructor
     Pair        :: Lit (a -> b -> (a, b))
 
+    -- | An in value ex. "in vec3 position"
     Fetch       :: String -> Type a -> Lit a
+    -- | A uniform value ex. "uniform vec3 position"
     Unif        :: String -> Type a -> Lit a
 
 instance Show (Lit a) where

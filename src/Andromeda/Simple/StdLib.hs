@@ -10,7 +10,7 @@ module Andromeda.Simple.StdLib where
 
 import GHC.TypeLits
 import Data.Proxy
-import Data.Vec (Vec2, Vec3, Vec4)
+import Data.Vec ((:.)(..), Vec2, Vec3, Vec4)
 
 import Andromeda.Simple.Expr
 import Andromeda.Simple.Type
@@ -158,6 +158,19 @@ type family If (condition :: Bool) (yes :: Nat) (no :: Nat) :: Nat where
     If 'False yes no = no
 
 type Max a b = If (a <=? b) b a
+
+--------------------------
+-- Vec pattern matching --
+--------------------------
+
+unVec2 :: (VecLength a a 1) => Expr (Vec2 a) -> Vec2 (Expr a)
+unVec2 vec = (vec ! X) :. (vec ! Y) :. ()
+
+unVec3 :: (VecLength a a 1) => Expr (Vec3 a) -> Vec3 (Expr a)
+unVec3 vec = (vec ! X) :. (vec ! Y) :. (vec ! Z) :. ()
+
+unVec4 :: (VecLength a a 1) => Expr (Vec4 a) -> Vec4 (Expr a)
+unVec4 vec = (vec ! X) :. (vec ! Y) :. (vec ! Z) :. (vec ! W) :. ()
 
 ----------------
 -- Matrix ops --

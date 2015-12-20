@@ -10,6 +10,7 @@ import Data.List (isInfixOf)
 import Data.String (fromString)
 import Data.Foldable (foldrM)
 import System.Exit (exitFailure)
+import Control.Monad.Free (Free(..), liftF)
 
 import qualified Data.Map as M
 
@@ -24,10 +25,22 @@ import Andromeda.Simple.Var
 import Andromeda.Simple.Render.Mesh
 import Andromeda.Simple.Render.VertexBuffer
 
-data Statement where
-    AssignS :: Typed a => String -> Expr a -> Statement
-    OutS    :: Typed a => String -> Expr a -> Statement
-    ThenS   :: Statement -> Statement      -> Statement
+type Statement a = Free StatementF a
+
+data StatementF next where
+    AssignF :: Typed a => String -> Expr a -> next -> StatementF next
+    OutF    :: Typed a => String -> Expr a -> next -> StatementF next
+
+instance Functor StatementF where
+    fmap f (AssignF n e next) = AssignF n e $ f next
+    fmap f (OutF    n e next) = OutF    n e $ f next
+
+(=:) :: Typed a => String -> Expr a -> Statement ()
+(=:) name expr = liftF $ AssignF name expr ()
+infixr 2 =:
+
+out :: Typed a => String -> Expr a -> Statement ()
+out name expr = liftF $ OutF name expr ()
 
 data Renderer = Renderer {
     glProgram       :: !GL.Program,
@@ -142,7 +155,7 @@ instance GLSL ShaderSource where
     toGLSL (ShaderSource declSrc mainSrc) =
         declSrc ++ "\nvoid main() {\n" ++ mainSrc ++ "\n}"
 
-compile :: Statement -> Statement -> IO Renderer
+compile :: Statement () -> Statement () -> IO Renderer
 compile vert frag =
     let vStr = version ++ toGLSL (compileStatement vert)
         fStr = version ++ toGLSL (compileStatement frag)
@@ -171,18 +184,29 @@ compile vert frag =
     inLen []                 = 0
 -}
 
-compileStatement :: Statement -> ShaderSource
-compileStatement = flip evalState [] . compileStatement'
+compileStatement :: Statement () -> ShaderSource
+compileStatement =
+    flip evalState [] . fmap (foldr (<>) mempty) .
+    mapM compileStatement' . statementToList
 
-compileStatement' :: Statement -> State [String] ShaderSource
-compileStatement' (AssignS name expr) = compileToGLSL name expr
-compileStatement' (OutS name expr) = do
+compileStatement' :: StatementF () -> State [String] ShaderSource
+compileStatement' (AssignF name expr ()) = compileToGLSL name expr
+compileStatement' (OutF name expr ()) = do
     let ty   = typeOfE expr
         decl = "out " ++ toGLSL ty ++ " " ++ name ++ ";\n"
     ShaderSource decl' mainSrc <- compileToGLSL name expr
     return $ ShaderSource (decl <> decl') mainSrc
+{-
 compileStatement' (ThenS a b) =
     (<>) <$> compileStatement' a <*> compileStatement' b
+-}
+
+statementToList :: Statement () -> [StatementF ()]
+statementToList (Free (AssignF name expr next)) =
+    AssignF name expr () : statementToList next
+statementToList (Free (OutF name expr next)) =
+    OutF name expr () : statementToList next
+statementToList (Pure ()) = []
 
 compileToGLSL :: String -> Expr a -> State [String] ShaderSource
 compileToGLSL outName expr = do

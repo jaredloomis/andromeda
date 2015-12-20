@@ -26,18 +26,17 @@ main = do
 
     mainLoop win prog
 
-
-
 glPosition :: Expr (Vec4 Float)
 glPosition = fetch "vertex" (Vec3T SFloat) +-+ 1
 
-vertShader :: Statement
-vertShader = AssignS "gl_Position" glPosition `ThenS`
-             OutS "fragPos" glPosition
+vertShader :: Statement ()
+vertShader = do
+    "gl_Position" =: glPosition
+    out "fragPos" glPosition
 
 outColor :: Expr (Vec3 Float)
 outColor =
-    let vert    = fetch "fragPos" (Vec4T SFloat)
+    let vert    = fetch   "fragPos" (Vec4T SFloat)
         inColor = uniform "inColor" (Vec3T SFloat)
     in avg (inColor ! X) (vert ! X) +-+
        avg (inColor ! Y) (vert ! Y) +-+
@@ -45,8 +44,8 @@ outColor =
   where
     avg x y = (x + y) / 2
 
-fragShader :: Statement
-fragShader = OutS "color" outColor
+fragShader :: Statement ()
+fragShader = out "color" outColor
 
 myMesh :: Mesh
 myMesh = Mesh
