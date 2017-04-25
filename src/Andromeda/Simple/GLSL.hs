@@ -9,7 +9,7 @@ class GLSL a where
     toGLSL :: a -> String
 
 instance GLSL Int where
-    toGLSL = show
+    toGLSL = (++".0") . show
 instance GLSL Word where
     toGLSL = show
 instance GLSL Float where
