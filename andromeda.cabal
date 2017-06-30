@@ -24,10 +24,12 @@ executable andromeda-example
   main-is:        Main.hs
 
   build-depends:
-    base,
+    base >= 4.7 && < 5,
     vector, Vec,
     OpenGL, GLFW-b,
     andromeda
+
+  default-language:    Haskell2010
 
 test-suite andromeda-tests
   type: exitcode-stdio-1.0
@@ -35,8 +37,11 @@ test-suite andromeda-tests
   main-is:        Main.hs
 
   build-depends:
-    base, QuickCheck,
+    base >= 4.7 && < 5,
+    QuickCheck,
     andromeda
+
+  default-language:    Haskell2010
 
 library
   exposed-modules:
@@ -66,7 +71,7 @@ library
     FunctionalDependencies, TupleSections, UndecidableInstances
 
   build-depends:
-    base >= 4.7,
+    base >= 4.7 && < 5,
     bytestring, vector, containers, mtl, free, Vec,
     JuicyPixels,
     OpenGL >= 2.9, GLFW-b, OpenGLRaw >=1.5

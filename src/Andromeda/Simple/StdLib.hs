@@ -152,6 +152,10 @@ instance Show (Index len s) where
 (!) vec index = Lit (FieldAccess $ show index) :$ vec
 infixl 8 !
 
+(~>) :: (VecLength s a n) => Expr a -> String -> Expr b
+(~>) vec indexname = Lit (FieldAccess indexname) :$ vec
+infixl 8 ~>
+
 -- Helpers
 
 type family If (condition :: Bool) (yes :: Nat) (no :: Nat) :: Nat where
