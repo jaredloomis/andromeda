@@ -6,7 +6,8 @@
 module Andromeda.Simple.Render.Compile where
 
 import Control.Monad.State
-import Data.Monoid ((<>))
+import Data.Semigroup (Semigroup, (<>))
+-- import Data.Monoid ((<>))
 import Data.List (isInfixOf)
 import Data.String (fromString)
 import Data.Foldable (foldrM)
@@ -158,11 +159,14 @@ data ShaderSource = ShaderSource {
     shaderSrcMain          :: String
     } deriving (Show, Eq)
 
+instance Semigroup ShaderSource where
+    (ShaderSource ad am) <> (ShaderSource bd bm) =
+        ShaderSource (ad ++ bd) (am ++ bm)
+
 instance Monoid ShaderSource where
     mempty = ShaderSource "" ""
     mappend (ShaderSource ad am) (ShaderSource bd bm) =
         ShaderSource (ad ++ bd) (am ++ bm)
-
 instance GLSL ShaderSource where
     toGLSL (ShaderSource declSrc mainSrc) =
         declSrc ++ "\nvoid main() {\n" ++ mainSrc ++ "\n}"
